@@ -16,6 +16,8 @@ fn main() {
                 "c".to_string(),
                 "d".to_string(),
                 "e".to_string(),
+                "f".to_string(),
+                "g".to_string(),
             ],
             body: vec![Return {
                 expr: Add {
@@ -34,8 +36,18 @@ fn main() {
                                 lhs: Box::new(Var {
                                     name: "d".to_string(),
                                 }),
-                                rhs: Box::new(Var {
-                                    name: "e".to_string(),
+                                rhs: Box::new(Add {
+                                    lhs: Box::new(Var {
+                                        name: "e".to_string(),
+                                    }),
+                                    rhs: Box::new(Add {
+                                        lhs: Box::new(Var {
+                                            name: "f".to_string(),
+                                        }),
+                                        rhs: Box::new(Var {
+                                            name: "g".to_string(),
+                                        }),
+                                    }),
                                 }),
                             }),
                         }),
@@ -49,12 +61,18 @@ fn main() {
         },
         VarDecl {
             name: "b".to_string(),
-            value: Const { value: 2 },
+            value: Const { value: 1 },
         },
         Print {
             expr: FnCall {
                 name: "add".to_string(),
                 args: vec![
+                    Var {
+                        name: "a".to_string(),
+                    },
+                    Var {
+                        name: "b".to_string(),
+                    },
                     Var {
                         name: "a".to_string(),
                     },

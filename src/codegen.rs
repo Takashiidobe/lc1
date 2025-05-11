@@ -12,15 +12,15 @@ pub struct Codegen {
     in_function: bool,
 }
 
-fn arg_reg(index: usize) -> &'static str {
+fn arg_reg(index: usize) -> Option<&'static str> {
     match index {
-        0 => "%rdi",
-        1 => "%rsi",
-        2 => "%rdx",
-        3 => "%rcx",
-        4 => "%r8",
-        5 => "%r9",
-        _ => panic!("More than 6 arguments not yet supported"),
+        0 => Some("%rdi"),
+        1 => Some("%rsi"),
+        2 => Some("%rdx"),
+        3 => Some("%rcx"),
+        4 => Some("%r8"),
+        5 => Some("%r9"),
+        _ => None,
     }
 }
 
@@ -30,11 +30,12 @@ impl Codegen {
     }
 
     fn emit(&mut self, line: &str) {
-        self.output.push_str("    ");
+        self.output.push_str("");
         self.output.push_str(line);
         self.output.push('\n');
     }
 
+    #[allow(unused)]
     fn new_label(&mut self, prefix: &str) -> String {
         let label = format!("{}_{}", prefix, self.label_count);
         self.label_count += 1;
@@ -67,7 +68,6 @@ impl Codegen {
     }
 
     pub fn run(&mut self, stmts: &[Stmt]) -> String {
-        // calculate max offset first
         self.stack_offset(stmts);
 
         self.emit(".section .data");
@@ -83,9 +83,9 @@ impl Codegen {
         }
 
         self.emit("main:");
-        self.emit("    pushq %rbp");
-        self.emit("    movq %rsp, %rbp");
-        self.emit(&format!("    subq ${}, %rsp", self.max_offset * 8));
+        self.emit("pushq %rbp");
+        self.emit("movq %rsp, %rbp");
+        self.emit(&format!("subq ${}, %rsp", self.max_offset * 8));
 
         for stmt in stmts {
             if !matches!(stmt, Stmt::FnDecl { .. }) {
@@ -93,7 +93,7 @@ impl Codegen {
             }
         }
 
-        self.output.clone()
+        self.format_asm()
     }
 
     fn gen_stmt(&mut self, stmt: &Stmt) {
@@ -114,19 +114,25 @@ impl Codegen {
             Stmt::Return { expr } => {
                 self.gen_expr(expr);
                 if !self.in_function {
-                    self.emit(&format!("    addq ${}, %rsp", self.max_offset * 8));
+                    self.emit(&format!("addq ${}, %rsp", self.max_offset * 8));
                 }
-                self.emit("    popq %rbp");
-                self.emit("    ret");
+                self.emit("popq %rbp");
+                self.emit("ret");
             }
             Stmt::FnDecl { name, args, body } => {
                 self.in_function = true;
                 self.emit(&format!("{}:", name));
-                self.emit("    pushq %rbp");
-                self.emit("    movq %rsp, %rbp");
+                self.emit("pushq %rbp");
+                self.emit("movq %rsp, %rbp");
                 for (i, arg) in args.iter().enumerate() {
                     let offset = -8 * (i as i64 + 1);
-                    self.emit(&format!("    movq {}, {}(%rbp)", arg_reg(i), offset));
+                    if let Some(reg) = arg_reg(i) {
+                        self.emit(&format!("movq {}, {}(%rbp)", reg, offset));
+                    } else {
+                        let stack_offset = 16 + 8 * ((i as i64) - 6);
+                        self.emit(&format!("movq {}(%rbp), %rax", stack_offset));
+                        self.emit(&format!("movq %rax, {}(%rbp)", offset));
+                    }
                     self.var_offsets.insert(arg.clone(), offset);
                 }
                 self.stack_offset = -8 * args.len() as i64;
@@ -145,29 +151,55 @@ impl Codegen {
     fn gen_expr(&mut self, expr: &Expr) {
         match expr {
             Expr::Const { value } => {
-                self.emit(&format!("    movq ${}, %rax", value));
+                self.emit(&format!("movq ${}, %rax", value));
             }
             Expr::Var { name } => {
                 if let Some(offset) = self.var_offsets.get(name) {
-                    self.emit(&format!("    movq {}(%rbp), %rax", offset));
+                    self.emit(&format!("movq {}(%rbp), %rax", offset));
                 } else {
                     panic!("Undefined variable: {}", name);
                 }
             }
             Expr::Add { lhs, rhs } => {
-                self.gen_expr(rhs);
-                self.emit("    pushq %rax");
                 self.gen_expr(lhs);
-                self.emit("    popq %rbx");
-                self.emit("    addq %rbx, %rax");
+                self.emit("pushq %rax");
+                self.gen_expr(rhs);
+                self.emit("popq %rbx");
+                self.emit("addq %rbx, %rax");
             }
             Expr::FnCall { name, args } => {
+                let mut stack_arg_count = 0;
                 for (i, arg) in args.iter().enumerate() {
                     self.gen_expr(arg);
-                    self.emit(&format!("    movq %rax, {}", arg_reg(i)));
+                    if let Some(reg) = arg_reg(i) {
+                        self.emit(&format!("movq %rax, {}", reg));
+                    } else {
+                        self.emit("pushq %rax");
+                        stack_arg_count += 1;
+                    }
                 }
-                self.emit(&format!("    call {}", name));
+
+                self.emit(&format!("call {}", name));
+
+                if stack_arg_count > 0 {
+                    self.emit(&format!("addq ${}, %rsp", 8 * stack_arg_count));
+                }
             }
         }
+    }
+
+    fn format_asm(&self) -> String {
+        self.output
+            .lines()
+            .map(|line| {
+                let trimmed = line.trim_end();
+                if trimmed.ends_with(':') || trimmed.starts_with('.') || trimmed.is_empty() {
+                    line.to_string()
+                } else {
+                    format!("  {}", line)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 }
