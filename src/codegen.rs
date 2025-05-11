@@ -116,8 +116,9 @@ impl Codegen {
             }
             Stmt::Return { expr } => {
                 self.gen_expr(expr);
-                if !self.in_function {
-                    self.emit(&format!("addq ${}, %rsp", self.max_offset * 8));
+                if self.stack_offset < -8 * self.var_offsets.len() as i64 {
+                    let cleanup = -self.stack_offset - (8 * self.var_offsets.len() as i64);
+                    self.emit(&format!("addq ${}, %rsp", cleanup));
                 }
                 self.emit("popq %rbp");
                 self.emit("ret");
@@ -140,9 +141,29 @@ impl Codegen {
                 }
                 self.stack_offset = -8 * args.len() as i64;
 
-                for stmt in body {
+                let function_start_offset = self.stack_offset;
+
+                let mut has_explicit_return = false;
+                for (i, stmt) in body.iter().enumerate() {
                     self.gen_stmt(stmt);
+                    if i == body.len() - 1 {
+                        if let Stmt::Return { .. } = stmt {
+                            has_explicit_return = true;
+                        }
+                    }
                 }
+
+                if !has_explicit_return {
+                    self.emit("movq $0, %rax");
+                }
+
+                if self.stack_offset < function_start_offset {
+                    let stack_cleanup = function_start_offset - self.stack_offset;
+                    self.emit(&format!("addq ${}, %rsp", stack_cleanup));
+                }
+
+                self.emit("popq %rbp");
+                self.emit("ret");
 
                 self.in_function = false;
                 self.stack_offset = 0;
@@ -156,9 +177,6 @@ impl Codegen {
                 let else_label = self.new_label("else");
                 let end_label = self.new_label("end");
 
-                let saved_offset = self.stack_offset;
-                let saved_var_offsets = self.var_offsets.clone();
-
                 self.gen_expr(cond);
 
                 self.emit("test %rax, %rax");
@@ -168,29 +186,48 @@ impl Codegen {
                 } else {
                     self.emit(&format!("jz {}", end_label));
                 }
+                // Check if then branch ends with return
+                let then_returns = then
+                    .last()
+                    .map_or(false, |stmt| matches!(stmt, Stmt::Return { .. }));
 
+                // Generate then branch
                 for stmt in then {
                     self.gen_stmt(stmt);
                 }
 
-                self.stack_offset = saved_offset;
-                self.var_offsets = saved_var_offsets.clone();
-
-                if else_branch.is_some() {
+                // Only jump to end if then branch doesn't return
+                if else_branch.is_some() && !then_returns {
                     self.emit(&format!("jmp {}", end_label));
                 }
 
+                // Generate else branch if it exists
                 if let Some(else_stmts) = else_branch {
                     self.emit(&format!("{}:", else_label));
+
+                    // Check if else branch ends with return
+                    let else_returns = else_stmts
+                        .last()
+                        .map_or(false, |stmt| matches!(stmt, Stmt::Return { .. }));
+
                     for stmt in else_stmts {
                         self.gen_stmt(stmt);
                     }
                 }
 
-                self.stack_offset = saved_offset;
-                self.var_offsets = saved_var_offsets.clone();
+                // Only generate end label if needed
+                let needs_end_label = if let Some(else_stmts) = else_branch {
+                    !then_returns
+                        || !else_stmts
+                            .last()
+                            .map_or(false, |stmt| matches!(stmt, Stmt::Return { .. }))
+                } else {
+                    true
+                };
 
-                self.emit(&format!("{}:", end_label));
+                if needs_end_label {
+                    self.emit(&format!("{}:", end_label));
+                }
             }
         }
     }
@@ -213,6 +250,15 @@ impl Codegen {
                 self.gen_expr(rhs);
                 self.emit("popq %rbx");
                 self.emit("addq %rbx, %rax");
+            }
+            Expr::Lt { lhs, rhs } => {
+                self.gen_expr(lhs);
+                self.emit("pushq %rax");
+                self.gen_expr(rhs);
+                self.emit("popq %rbx");
+                self.emit("cmpq %rax, %rbx");
+                self.emit("setl %al");
+                self.emit("movzbq %al, %rax");
             }
             Expr::FnCall { name, args } => {
                 let mut stack_arg_count = 0;

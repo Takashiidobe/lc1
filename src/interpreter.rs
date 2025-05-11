@@ -126,6 +126,16 @@ impl Interpreter {
                     None => Expr::Const { value: 0 },
                 }
             }
+            Expr::Lt { lhs, rhs } => {
+                let lhs = self.eval(lhs);
+                let rhs = self.eval(rhs);
+                match (lhs, rhs) {
+                    (Expr::Const { value: l }, Expr::Const { value: r }) => Expr::Const {
+                        value: if l < r { 1 } else { 0 },
+                    },
+                    _ => panic!("Cannot compare non-number expressions"),
+                }
+            }
         }
     }
 

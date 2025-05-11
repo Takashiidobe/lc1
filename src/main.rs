@@ -152,9 +152,57 @@ fn main() {
             },
         },
     ];
+    let fibonacci_program = vec![
+        // Declare fibonacci function
+        FnDecl {
+            name: "fibonacci".to_string(),
+            args: vec!["n".to_string()],
+            body: vec![If {
+                cond: Lt {
+                    lhs: Box::new(Var {
+                        name: "n".to_string(),
+                    }),
+                    rhs: Box::new(Const { value: 2 }),
+                },
+                then: vec![Return {
+                    expr: Var {
+                        name: "n".to_string(),
+                    },
+                }],
+                else_branch: Some(vec![Return {
+                    expr: Add {
+                        lhs: Box::new(FnCall {
+                            name: "fibonacci".to_string(),
+                            args: vec![Add {
+                                lhs: Box::new(Var {
+                                    name: "n".to_string(),
+                                }),
+                                rhs: Box::new(Const { value: -1 }),
+                            }],
+                        }),
+                        rhs: Box::new(FnCall {
+                            name: "fibonacci".to_string(),
+                            args: vec![Add {
+                                lhs: Box::new(Var {
+                                    name: "n".to_string(),
+                                }),
+                                rhs: Box::new(Const { value: -2 }),
+                            }],
+                        }),
+                    },
+                }]),
+            }],
+        },
+        Print {
+            expr: FnCall {
+                name: "fibonacci".to_string(),
+                args: vec![Const { value: 5 }],
+            },
+        },
+    ];
     let mut codegen = Codegen::default();
-    println!("{}", codegen.run(&nested_if));
+    println!("{}", codegen.run(&fibonacci_program));
 
     // let mut interpreter = Interpreter::default();
-    // interpreter.run(&nested_if);
+    // interpreter.run(&fibonacci_program);
 }
