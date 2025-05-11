@@ -2,40 +2,60 @@ use std::{collections::HashMap, process::exit};
 
 use crate::ast::{Expr, Stmt};
 
-// I need a set of nested hashmaps for stack frames
 #[derive(Default, Clone, PartialEq, Eq)]
+pub struct StackFrame {
+    vars: HashMap<String, Expr>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct Interpreter {
     fns: HashMap<String, (Vec<String>, Vec<Stmt>)>,
-    vars: HashMap<String, Expr>,
+    stack: Vec<StackFrame>,
+}
+
+impl Default for Interpreter {
+    fn default() -> Self {
+        Self {
+            fns: Default::default(),
+            stack: vec![StackFrame::default()],
+        }
+    }
 }
 
 impl Interpreter {
     pub fn run(&mut self, stmts: &[Stmt]) {
         for stmt in stmts {
-            self.exec(stmt);
+            if let Some(val) = self.exec(stmt) {
+                match val {
+                    Expr::Const { value } => exit(value as i32),
+                    _ => exit(0),
+                }
+            }
         }
     }
 
-    pub fn exec(&mut self, stmt: &Stmt) {
+    pub fn exec(&mut self, stmt: &Stmt) -> Option<Expr> {
         match stmt {
             Stmt::FnDecl { name, args, body } => {
                 self.fns
                     .insert(name.clone(), (args.to_vec(), body.to_vec()));
+                None
             }
             Stmt::VarDecl { name, value } => {
-                self.vars.insert(name.clone(), value.clone());
+                let value = self.eval(value);
+                self.current_frame_mut().vars.insert(name.clone(), value);
+                None
             }
             Stmt::Print { expr } => {
                 let expr = self.eval(expr);
-                println!("{:?}", expr)
+                println!("{}", expr);
+                None
             }
             Stmt::Return { expr } => {
                 let val = self.eval(expr);
                 match val {
-                    Expr::Const { value } => {
-                        exit(value.try_into().unwrap());
-                    }
-                    _ => panic!("Could not return with value"),
+                    Expr::Const { .. } => Some(val),
+                    _ => None,
                 }
             }
         }
@@ -54,33 +74,43 @@ impl Interpreter {
                 }
             }
             Expr::Const { .. } => expr.clone(),
-            Expr::Var { name } => self.vars.get(name).unwrap().clone(),
-            Expr::FnCall { name, args } => {
-                let (vars, body) = self.fns.get(name).unwrap().clone();
-                if args.len() != vars.len() {
-                    panic!("cannot call this function without correct arity");
+            Expr::Var { name } => {
+                for frame in self.stack.iter().rev() {
+                    if let Some(value) = frame.vars.get(name) {
+                        return value.clone();
+                    }
                 }
-                for (var, arg) in vars.iter().zip(args) {
-                    let evaled_arg = self.eval(arg);
-                    self.vars.insert(var.to_string(), evaled_arg);
+                panic!("Undefined variable: {}", name);
+            }
+            Expr::FnCall { name, args } => {
+                let (param_names, body) = self.fns.get(name).unwrap().clone();
+                if args.len() != param_names.len() {
+                    panic!(
+                        "Cannot call function {} with {} arguments, expected {}",
+                        name,
+                        args.len(),
+                        param_names.len()
+                    );
                 }
 
+                let mut new_frame = StackFrame::default();
+
+                for (param_name, arg) in param_names.iter().zip(args) {
+                    let evaled_arg = self.eval(arg);
+                    new_frame.vars.insert(param_name.to_string(), evaled_arg);
+                }
+
+                self.stack.push(new_frame);
+
                 let mut ret_val = None;
-                for stmt in body {
-                    match stmt {
-                        Stmt::Return { expr } => {
-                            ret_val = Some(self.eval(&expr));
-                            break;
-                        }
-                        _ => {
-                            self.exec(&stmt);
-                        }
+                for stmt in &body {
+                    if let Some(val) = self.exec(stmt) {
+                        ret_val = Some(val);
+                        break;
                     }
                 }
 
-                for var in vars.clone() {
-                    self.vars.remove(&var);
-                }
+                self.stack.pop();
 
                 match ret_val {
                     Some(v) => v,
@@ -88,5 +118,9 @@ impl Interpreter {
                 }
             }
         }
+    }
+
+    fn current_frame_mut(&mut self) -> &mut StackFrame {
+        self.stack.last_mut().unwrap()
     }
 }

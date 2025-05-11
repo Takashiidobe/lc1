@@ -1,6 +1,7 @@
 use lc1::{
     ast::{Expr, Stmt},
     codegen::Codegen,
+    interpreter::Interpreter,
 };
 
 use Expr::*;
@@ -107,10 +108,9 @@ fn main() {
             },
         },
     ];
-    let mut codegen = Codegen::default();
+    // let mut codegen = Codegen::default();
+    // println!("{}", codegen.run(&program));
 
-    println!("{}", codegen.run(&program));
-
-    // let mut interpreter = Interpreter::default();
-    // dbg!(interpreter.run(&program));
+    let mut interpreter = Interpreter::default();
+    interpreter.run(&program);
 }
