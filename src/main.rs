@@ -97,6 +97,15 @@ fn main() {
                 name: "b".to_string(),
             },
         },
+        If {
+            cond: Const { value: 1 },
+            then: vec![Print {
+                expr: Const { value: 10 },
+            }],
+            else_branch: Some(vec![Print {
+                expr: Const { value: 20 },
+            }]),
+        },
         Return {
             expr: Add {
                 lhs: Box::new(Var {
@@ -108,9 +117,44 @@ fn main() {
             },
         },
     ];
-    // let mut codegen = Codegen::default();
-    // println!("{}", codegen.run(&program));
+    let if_program = vec![If {
+        cond: Const { value: 0 },
+        then: vec![Print {
+            expr: Const { value: 10 },
+        }],
+        else_branch: Some(vec![Print {
+            expr: Const { value: 20 },
+        }]),
+    }];
+    let nested_if = vec![
+        VarDecl {
+            name: "x".to_string(),
+            value: Const { value: 1 },
+        },
+        If {
+            cond: Const { value: 1 },
+            then: vec![
+                VarDecl {
+                    name: "x".to_string(),
+                    value: Const { value: 2 },
+                },
+                Print {
+                    expr: Var {
+                        name: "x".to_string(),
+                    },
+                },
+            ],
+            else_branch: None,
+        },
+        Print {
+            expr: Var {
+                name: "x".to_string(),
+            },
+        },
+    ];
+    let mut codegen = Codegen::default();
+    println!("{}", codegen.run(&nested_if));
 
-    let mut interpreter = Interpreter::default();
-    interpreter.run(&program);
+    // let mut interpreter = Interpreter::default();
+    // interpreter.run(&nested_if);
 }

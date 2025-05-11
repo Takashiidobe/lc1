@@ -30,14 +30,12 @@ impl Codegen {
     }
 
     fn emit(&mut self, line: &str) {
-        self.output.push_str("");
         self.output.push_str(line);
         self.output.push('\n');
     }
 
-    #[allow(unused)]
     fn new_label(&mut self, prefix: &str) -> String {
-        let label = format!("{}_{}", prefix, self.label_count);
+        let label = format!(".L{}_{}", prefix, self.label_count);
         self.label_count += 1;
         label
     }
@@ -93,6 +91,11 @@ impl Codegen {
             }
         }
 
+        self.emit("xor %rax, %rax");
+        self.emit(&format!("addq ${}, %rsp", self.max_offset * 8));
+        self.emit("popq %rbp");
+        self.emit("ret");
+
         self.format_asm()
     }
 
@@ -144,6 +147,50 @@ impl Codegen {
                 self.in_function = false;
                 self.stack_offset = 0;
                 self.var_offsets.clear();
+            }
+            Stmt::If {
+                cond,
+                then,
+                else_branch,
+            } => {
+                let else_label = self.new_label("else");
+                let end_label = self.new_label("end");
+
+                let saved_offset = self.stack_offset;
+                let saved_var_offsets = self.var_offsets.clone();
+
+                self.gen_expr(cond);
+
+                self.emit("test %rax, %rax");
+
+                if else_branch.is_some() {
+                    self.emit(&format!("jz {}", else_label));
+                } else {
+                    self.emit(&format!("jz {}", end_label));
+                }
+
+                for stmt in then {
+                    self.gen_stmt(stmt);
+                }
+
+                self.stack_offset = saved_offset;
+                self.var_offsets = saved_var_offsets.clone();
+
+                if else_branch.is_some() {
+                    self.emit(&format!("jmp {}", end_label));
+                }
+
+                if let Some(else_stmts) = else_branch {
+                    self.emit(&format!("{}:", else_label));
+                    for stmt in else_stmts {
+                        self.gen_stmt(stmt);
+                    }
+                }
+
+                self.stack_offset = saved_offset;
+                self.var_offsets = saved_var_offsets.clone();
+
+                self.emit(&format!("{}:", end_label));
             }
         }
     }

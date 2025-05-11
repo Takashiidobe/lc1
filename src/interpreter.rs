@@ -58,6 +58,25 @@ impl Interpreter {
                     _ => None,
                 }
             }
+            Stmt::If {
+                cond,
+                then,
+                else_branch,
+            } => {
+                let cond = self.eval(cond);
+
+                let is_true = match cond {
+                    Expr::Const { value } => value != 0,
+                    _ => panic!("Condition must evaluate to a constant"),
+                };
+                if is_true {
+                    self.exec_block(then, StackFrame::default());
+                } else if let Some(else_stmts) = else_branch {
+                    self.exec_block(else_stmts, StackFrame::default());
+                }
+
+                None
+            }
         }
     }
 
@@ -100,17 +119,7 @@ impl Interpreter {
                     new_frame.vars.insert(param_name.to_string(), evaled_arg);
                 }
 
-                self.stack.push(new_frame);
-
-                let mut ret_val = None;
-                for stmt in &body {
-                    if let Some(val) = self.exec(stmt) {
-                        ret_val = Some(val);
-                        break;
-                    }
-                }
-
-                self.stack.pop();
+                let ret_val = self.exec_block(&body, new_frame);
 
                 match ret_val {
                     Some(v) => v,
@@ -122,5 +131,20 @@ impl Interpreter {
 
     fn current_frame_mut(&mut self) -> &mut StackFrame {
         self.stack.last_mut().unwrap()
+    }
+    fn exec_block(&mut self, stmts: &[Stmt], frame: StackFrame) -> Option<Expr> {
+        self.stack.push(frame);
+
+        let mut result = None;
+        for stmt in stmts {
+            if let Some(ret_val) = self.exec(stmt) {
+                result = Some(ret_val);
+                break;
+            }
+        }
+
+        self.stack.pop();
+
+        result
     }
 }

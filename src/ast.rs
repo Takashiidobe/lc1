@@ -36,4 +36,9 @@ pub enum Stmt {
     Return {
         expr: Expr,
     },
+    If {
+        cond: Expr,
+        then: Vec<Stmt>,
+        else_branch: Option<Vec<Stmt>>,
+    },
 }
