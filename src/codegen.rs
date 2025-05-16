@@ -121,9 +121,9 @@ impl Codegen {
 
         self.emit(".section .data");
         self.emit("fmt: .string \"%ld\\n\"");
+        self.emit("null: .string \"null\"");
 
         self.emit(".section .rodata");
-        self.emit(".L_null: .string \"null\"");
         let literals = self.string_literals.clone();
         for (s, label) in &literals {
             let esc = s.escape_default().to_string();
@@ -254,9 +254,11 @@ impl Codegen {
                     self.emit(&format!("addq ${}, %rsp", stack_cleanup));
                 }
 
-                self.emit("movq %rbp, %rsp");
-                self.emit("popq %rbp");
-                self.emit("ret");
+                if !has_explicit_return {
+                    self.emit("movq %rbp, %rsp");
+                    self.emit("popq %rbp");
+                    self.emit("ret");
+                }
 
                 self.stack_offset = 0;
                 self.var_offsets.clear();
@@ -330,7 +332,7 @@ impl Codegen {
                     self.emit(&format!("leaq {}(%rip), %rax", label));
                 }
                 Value::Null => {
-                    self.emit("leaq .L_null(%rip), %rax");
+                    self.emit("leaq null(%rip), %rax");
                 }
             },
             Expr::Var { name } => {
@@ -401,7 +403,6 @@ impl Codegen {
                         walk_expr(cg, arg);
                     }
                 }
-                // These can't have string literals
                 _ => {}
             }
         }
