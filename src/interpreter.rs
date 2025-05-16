@@ -63,16 +63,20 @@ impl Interpreter {
                 then,
                 else_branch,
             } => {
-                let cond = self.eval(cond);
-
-                let is_true = match cond {
+                let cond_val = self.eval(cond);
+                let is_true = match cond_val {
                     Expr::Const { value } => value != 0,
                     _ => panic!("Condition must evaluate to a constant"),
                 };
+
                 if is_true {
-                    self.exec_block(then, StackFrame::default());
+                    if let Some(ret) = self.exec_block(then, StackFrame::default()) {
+                        return Some(ret);
+                    }
                 } else if let Some(else_stmts) = else_branch {
-                    self.exec_block(else_stmts, StackFrame::default());
+                    if let Some(ret) = self.exec_block(else_stmts, StackFrame::default()) {
+                        return Some(ret);
+                    }
                 }
 
                 None

@@ -196,13 +196,13 @@ fn main() {
         Print {
             expr: FnCall {
                 name: "fibonacci".to_string(),
-                args: vec![Const { value: 20 }],
+                args: vec![Const { value: 5 }],
             },
         },
     ];
-    let mut codegen = Codegen::default();
-    println!("{}", codegen.run(&fibonacci_program));
+    // let mut codegen = Codegen::default();
+    // println!("{}", codegen.run(&fibonacci_program));
 
-    // let mut interpreter = Interpreter::default();
-    // interpreter.run(&fibonacci_program);
+    let mut interpreter = Interpreter::default();
+    interpreter.run(&fibonacci_program);
 }
