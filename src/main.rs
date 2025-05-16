@@ -1,6 +1,5 @@
 use lc1::{
     ast::{Expr, Stmt},
-    codegen::Codegen,
     interpreter::Interpreter,
 };
 

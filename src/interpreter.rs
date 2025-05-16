@@ -146,6 +146,7 @@ impl Interpreter {
     fn current_frame_mut(&mut self) -> &mut StackFrame {
         self.stack.last_mut().unwrap()
     }
+
     fn exec_block(&mut self, stmts: &[Stmt], frame: StackFrame) -> Option<Expr> {
         self.stack.push(frame);
 
