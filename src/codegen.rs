@@ -120,6 +120,7 @@ impl Codegen {
                     let cleanup = -self.stack_offset - (8 * self.var_offsets.len() as i64);
                     self.emit(&format!("addq ${}, %rsp", cleanup));
                 }
+                self.emit("movq %rbp, %rsp");
                 self.emit("popq %rbp");
                 self.emit("ret");
             }
@@ -128,6 +129,8 @@ impl Codegen {
                 self.emit(&format!("{}:", name));
                 self.emit("pushq %rbp");
                 self.emit("movq %rsp, %rbp");
+                let frame_bytes = (self.max_offset as i64) * 8;
+                self.emit(&format!("subq ${}, %rsp", frame_bytes));
                 for (i, arg) in args.iter().enumerate() {
                     let offset = -8 * (i as i64 + 1);
                     if let Some(reg) = arg_reg(i) {
@@ -162,6 +165,7 @@ impl Codegen {
                     self.emit(&format!("addq ${}, %rsp", stack_cleanup));
                 }
 
+                self.emit("movq %rbp, %rsp");
                 self.emit("popq %rbp");
                 self.emit("ret");
 

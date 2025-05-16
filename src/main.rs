@@ -196,7 +196,7 @@ fn main() {
         Print {
             expr: FnCall {
                 name: "fibonacci".to_string(),
-                args: vec![Const { value: 5 }],
+                args: vec![Const { value: 20 }],
             },
         },
     ];
