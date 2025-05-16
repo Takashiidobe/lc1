@@ -80,6 +80,7 @@ impl Codegen {
                 .fn_ret_types
                 .get(name.as_str())
                 .unwrap_or_else(|| panic!("unknown fn `{}`", name)),
+            Neg { .. } => Type::Int,
         }
     }
 
@@ -373,6 +374,10 @@ impl Codegen {
                     self.emit(&format!("addq ${}, %rsp", 8 * stack_arg_count));
                 }
             }
+            Expr::Neg { expr } => {
+                self.gen_expr(expr);
+                self.emit("negq %rax");
+            }
         }
     }
 
@@ -387,7 +392,6 @@ impl Codegen {
                         cg.string_literals.insert(s.clone(), lbl);
                     }
                 }
-                Expr::Const { .. } | Expr::Var { .. } => {}
                 Expr::Add { lhs, rhs } | Expr::Lt { lhs, rhs } => {
                     walk_expr(cg, lhs);
                     walk_expr(cg, rhs);
@@ -397,6 +401,8 @@ impl Codegen {
                         walk_expr(cg, arg);
                     }
                 }
+                // These can't have string literals
+                _ => {}
             }
         }
 

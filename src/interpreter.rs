@@ -83,6 +83,10 @@
 //
 //     pub fn eval(&mut self, expr: &Expr) -> Expr {
 //         match expr {
+//         Expr::Neg{expr} => match self.eval(expr) {
+//     Value::Int(i) => Value::Int(-i),
+//     _ => panic!("Unary minus on non-int"),
+// }
 //             Expr::Add { lhs, rhs } => {
 //                 let lhs = self.eval(lhs);
 //                 let rhs = self.eval(rhs);

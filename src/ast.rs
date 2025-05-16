@@ -39,6 +39,7 @@ impl Display for Value {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub enum Expr {
+    Neg { expr: Box<Expr> },
     Add { lhs: Box<Expr>, rhs: Box<Expr> },
     Lt { lhs: Box<Expr>, rhs: Box<Expr> },
     Const { value: Value },
@@ -49,6 +50,7 @@ pub enum Expr {
 impl Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Expr::Neg { expr } => f.write_fmt(format_args!("-{expr}")),
             Expr::Add { lhs, rhs } => f.write_fmt(format_args!("{lhs} + {rhs}")),
             Expr::Lt { lhs, rhs } => f.write_fmt(format_args!("{lhs} < {rhs}")),
             Expr::Const { value } => f.write_fmt(format_args!("{value}")),
