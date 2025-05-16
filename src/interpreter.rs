@@ -1,166 +1,183 @@
-// use std::{collections::HashMap, process::exit};
-//
-// use crate::ast::{Expr, Stmt, Value};
-//
-// #[derive(Default, Clone, PartialEq, Eq)]
-// pub struct StackFrame {
-//     vars: HashMap<String, Value>,
-// }
-//
-// #[derive(Clone, PartialEq, Eq)]
-// pub struct Interpreter {
-//     fns: HashMap<String, (Vec<String>, Vec<Stmt>)>,
-//     stack: Vec<StackFrame>,
-// }
-//
-// impl Default for Interpreter {
-//     fn default() -> Self {
-//         Self {
-//             fns: Default::default(),
-//             stack: vec![StackFrame::default()],
-//         }
-//     }
-// }
-//
-// impl Interpreter {
-//     pub fn run(&mut self, stmts: &[Stmt]) {
-//         for stmt in stmts {
-//             if let Some(val) = self.exec(stmt) {
-//                 todo!()
-//             }
-//         }
-//     }
-//
-//     pub fn exec(&mut self, stmt: &Stmt) -> Option<Expr> {
-//         match stmt {
-//             Stmt::FnDecl { name, args, body } => {
-//                 self.fns
-//                     .insert(name.clone(), (args.to_vec(), body.to_vec()));
-//                 None
-//             }
-//             Stmt::VarDecl { name, value } => {
-//                 let value = self.eval(value);
-//                 self.current_frame_mut().vars.insert(name.clone(), value);
-//                 None
-//             }
-//             Stmt::Print { expr } => {
-//                 let expr = self.eval(expr);
-//                 println!("{}", expr);
-//                 None
-//             }
-//             Stmt::Return { expr } => {
-//                 let val = self.eval(expr);
-//                 match val {
-//                     Expr::Const { .. } => Some(val),
-//                     _ => None,
-//                 }
-//             }
-//             Stmt::If {
-//                 cond,
-//                 then,
-//                 else_branch,
-//             } => {
-//                 let cond_val = self.eval(cond);
-//                 let is_true = match cond_val {
-//                     Expr::Const { value } => value != 0,
-//                     _ => panic!("Condition must evaluate to a constant"),
-//                 };
-//
-//                 if is_true {
-//                     if let Some(ret) = self.exec_block(then, StackFrame::default()) {
-//                         return Some(ret);
-//                     }
-//                 } else if let Some(else_stmts) = else_branch {
-//                     if let Some(ret) = self.exec_block(else_stmts, StackFrame::default()) {
-//                         return Some(ret);
-//                     }
-//                 }
-//
-//                 None
-//             }
-//         }
-//     }
-//
-//     pub fn eval(&mut self, expr: &Expr) -> Expr {
-//         match expr {
-//         Expr::Neg{expr} => match self.eval(expr) {
-//     Value::Int(i) => Value::Int(-i),
-//     _ => panic!("Unary minus on non-int"),
-// }
-//             Expr::Add { lhs, rhs } => {
-//                 let lhs = self.eval(lhs);
-//                 let rhs = self.eval(rhs);
-//                 match (lhs, rhs) {
-//                     (Expr::Const { value: l }, Expr::Const { value: r }) => {
-//                         Expr::Const { value: l + r }
-//                     }
-//                     _ => panic!("Cannot add two non-number expressions"),
-//                 }
-//             }
-//             Expr::Const { .. } => expr.clone(),
-//             Expr::Var { name } => {
-//                 for frame in self.stack.iter().rev() {
-//                     if let Some(value) = frame.vars.get(name) {
-//                         return value.clone();
-//                     }
-//                 }
-//                 panic!("Undefined variable: {}", name);
-//             }
-//             Expr::FnCall { name, args } => {
-//                 let (param_names, body) = self.fns.get(name).unwrap().clone();
-//                 if args.len() != param_names.len() {
-//                     panic!(
-//                         "Cannot call function {} with {} arguments, expected {}",
-//                         name,
-//                         args.len(),
-//                         param_names.len()
-//                     );
-//                 }
-//
-//                 let mut new_frame = StackFrame::default();
-//
-//                 for (param_name, arg) in param_names.iter().zip(args) {
-//                     let evaled_arg = self.eval(arg);
-//                     new_frame.vars.insert(param_name.to_string(), evaled_arg);
-//                 }
-//
-//                 let ret_val = self.exec_block(&body, new_frame);
-//
-//                 match ret_val {
-//                     Some(v) => v,
-//                     None => Expr::Const { value: 0 },
-//                 }
-//             }
-//             Expr::Lt { lhs, rhs } => {
-//                 let lhs = self.eval(lhs);
-//                 let rhs = self.eval(rhs);
-//                 match (lhs, rhs) {
-//                     (Expr::Const { value: l }, Expr::Const { value: r }) => Expr::Const {
-//                         value: if l < r { 1 } else { 0 },
-//                     },
-//                     _ => panic!("Cannot compare non-number expressions"),
-//                 }
-//             }
-//         }
-//     }
-//
-//     fn current_frame_mut(&mut self) -> &mut StackFrame {
-//         self.stack.last_mut().unwrap()
-//     }
-//
-//     fn exec_block(&mut self, stmts: &[Stmt], frame: StackFrame) -> Option<Expr> {
-//         self.stack.push(frame);
-//
-//         let mut result = None;
-//         for stmt in stmts {
-//             if let Some(ret_val) = self.exec(stmt) {
-//                 result = Some(ret_val);
-//                 break;
-//             }
-//         }
-//
-//         self.stack.pop();
-//
-//         result
-//     }
-// }
+use crate::{
+    ast::{Expr, Stmt, Value},
+    codegen::Type,
+};
+use std::collections::HashMap;
+
+#[derive(Default, Clone, PartialEq, Eq)]
+pub struct StackFrame {
+    vars: HashMap<String, Value>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct Interpreter {
+    fns: HashMap<String, (Vec<(String, Type)>, Vec<Stmt>)>,
+    stack: Vec<StackFrame>,
+}
+
+impl Default for Interpreter {
+    fn default() -> Self {
+        Self {
+            fns: Default::default(),
+            stack: vec![StackFrame::default()],
+        }
+    }
+}
+
+impl Interpreter {
+    pub fn run(&mut self, stmts: &[Stmt]) {
+        for stmt in stmts {
+            if let Some(val) = self.exec(stmt) {
+                match val {
+                    Value::Int(i) => std::process::exit(i as i32),
+                    Value::Str(s) => {
+                        println!("{}", s);
+                        std::process::exit(0);
+                    }
+                    Value::Null => std::process::exit(0),
+                }
+            }
+        }
+    }
+
+    /// Execute one statement; returns Some(Value) if it was a `return`.
+    pub fn exec(&mut self, stmt: &Stmt) -> Option<Value> {
+        match stmt {
+            Stmt::FnDecl {
+                name,
+                args,
+                body,
+                return_type,
+            } => {
+                let names = args.clone();
+                self.fns.insert(name.clone(), (names, body.clone()));
+                None
+            }
+            Stmt::VarDecl { name, value } => {
+                let v = self.eval(value);
+                self.current_frame_mut().vars.insert(name.clone(), v);
+                None
+            }
+            Stmt::Print { expr } => {
+                let v = self.eval(expr);
+                match v {
+                    Value::Int(i) => println!("{}", i),
+                    Value::Str(s) => println!("{}", s),
+                    Value::Null => println!("null"),
+                }
+                None
+            }
+            Stmt::Return { expr } => Some(self.eval(expr)),
+            Stmt::If {
+                cond,
+                then,
+                else_branch,
+            } => {
+                let cv = self.eval(cond);
+                let truthy = match cv {
+                    Value::Int(i) => i != 0,
+                    _ => panic!("Condition must evaluate to an integer"),
+                };
+
+                if truthy {
+                    if let Some(ret) = self.exec_block(then, StackFrame::default()) {
+                        return Some(ret);
+                    }
+                } else if let Some(els) = else_branch {
+                    if let Some(ret) = self.exec_block(els, StackFrame::default()) {
+                        return Some(ret);
+                    }
+                }
+
+                None
+            }
+        }
+    }
+
+    /// Evaluate an expression to a Value.
+    pub fn eval(&mut self, expr: &Expr) -> Value {
+        match expr {
+            Expr::Neg { expr } => {
+                let v = self.eval(expr);
+                match v {
+                    Value::Int(i) => Value::Int(-i),
+                    _ => panic!("Unary minus on non-int"),
+                }
+            }
+
+            Expr::Add { lhs, rhs } => {
+                let l = self.eval(lhs);
+                let r = self.eval(rhs);
+                match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Value::Int(a + b),
+                    _ => panic!("Addition requires two ints"),
+                }
+            }
+
+            Expr::Lt { lhs, rhs } => {
+                let l = self.eval(lhs);
+                let r = self.eval(rhs);
+                match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Value::Int(if a < b { 1 } else { 0 }),
+                    _ => panic!("Comparison requires two ints"),
+                }
+            }
+
+            Expr::Const { value } => value.clone(),
+
+            Expr::Var { name } => {
+                for frame in self.stack.iter().rev() {
+                    if let Some(v) = frame.vars.get(name) {
+                        return v.clone();
+                    }
+                }
+                panic!("Undefined variable: {}", name);
+            }
+
+            Expr::FnCall { name, args } => {
+                let (params, body) = self
+                    .fns
+                    .get(name)
+                    .unwrap_or_else(|| panic!("Unknown fn: {}", name))
+                    .clone();
+                if params.len() != args.len() {
+                    panic!(
+                        "Wrong # args for {}: got {}, expected {}",
+                        name,
+                        args.len(),
+                        params.len()
+                    );
+                }
+
+                let mut frame = StackFrame::default();
+                for (p, arg_expr) in params.iter().zip(args.iter()) {
+                    let v = self.eval(arg_expr);
+                    frame.vars.insert(p.0.clone(), v);
+                }
+
+                if let Some(ret) = self.exec_block(&body, frame) {
+                    ret
+                } else {
+                    Value::Int(0)
+                }
+            }
+        }
+    }
+
+    fn current_frame_mut(&mut self) -> &mut StackFrame {
+        self.stack.last_mut().unwrap()
+    }
+
+    fn exec_block(&mut self, stmts: &[Stmt], frame: StackFrame) -> Option<Value> {
+        self.stack.push(frame);
+        let mut result = None;
+        for stmt in stmts {
+            if let Some(v) = self.exec(stmt) {
+                result = Some(v);
+                break;
+            }
+        }
+        self.stack.pop();
+        result
+    }
+}
