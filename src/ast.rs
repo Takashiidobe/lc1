@@ -1,10 +1,25 @@
 use std::fmt::{self, Display};
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Value {
+    Int(i64),
+    Str(String),
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Int(i) => f.write_str(&i.to_string()),
+            Value::Str(s) => f.write_str(s),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub enum Expr {
     Add { lhs: Box<Expr>, rhs: Box<Expr> },
     Lt { lhs: Box<Expr>, rhs: Box<Expr> },
-    Const { value: i64 },
+    Const { value: Value },
     Var { name: String },
     FnCall { name: String, args: Vec<Expr> },
 }

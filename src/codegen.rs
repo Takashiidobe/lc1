@@ -1,15 +1,22 @@
 use std::{cmp::max, collections::HashMap};
 
-use crate::ast::{Expr, Stmt};
+use crate::ast::{Expr, Stmt, Value};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Type {
+    Int,
+    Str,
+}
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Codegen {
-    output: String,
+    output: Vec<String>,
     label_count: usize,
-    var_offsets: HashMap<String, i64>, // stack offsets
+    var_offsets: HashMap<String, i64>,
     stack_offset: i64,
     max_offset: u64,
     in_function: bool,
+    string_literals: HashMap<String, String>,
 }
 
 fn arg_reg(index: usize) -> Option<&'static str> {
@@ -30,8 +37,7 @@ impl Codegen {
     }
 
     fn emit(&mut self, line: &str) {
-        self.output.push_str(line);
-        self.output.push('\n');
+        self.output.push(line.trim().to_string());
     }
 
     fn new_label(&mut self, prefix: &str) -> String {
@@ -67,9 +73,18 @@ impl Codegen {
 
     pub fn run(&mut self, stmts: &[Stmt]) -> String {
         self.stack_offset(stmts);
+        self.collect_string_literals(stmts);
 
         self.emit(".section .data");
         self.emit("fmt: .string \"%ld\\n\"");
+
+        self.emit(".section .rodata");
+        let literals = self.string_literals.clone();
+        for (s, label) in &literals {
+            let esc = s.escape_default().to_string();
+            self.emit(&format!("{}: .string \"{}\"", label, esc));
+        }
+
         self.emit(".text");
         self.emit(".globl main");
         self.emit("");
@@ -109,10 +124,20 @@ impl Codegen {
             }
             Stmt::Print { expr } => {
                 self.gen_expr(expr);
-                self.emit("movq %rax, %rsi");
-                self.emit("leaq fmt(%rip), %rdi");
-                self.emit("xor %rax, %rax");
-                self.emit("call printf");
+
+                // this needs to check if the evaluated expr is a Str/Int
+                if let Expr::Const {
+                    value: Value::Str(_),
+                } = expr
+                {
+                    self.emit("movq %rax, %rdi");
+                    self.emit("call puts");
+                } else {
+                    self.emit("movq %rax, %rsi");
+                    self.emit("leaq fmt(%rip), %rdi");
+                    self.emit("xor %rax, %rax");
+                    self.emit("call printf");
+                }
             }
             Stmt::Return { expr } => {
                 self.gen_expr(expr);
@@ -228,9 +253,15 @@ impl Codegen {
 
     fn gen_expr(&mut self, expr: &Expr) {
         match expr {
-            Expr::Const { value } => {
-                self.emit(&format!("movq ${}, %rax", value));
-            }
+            Expr::Const { value } => match value {
+                Value::Int(i) => {
+                    self.emit(&format!("movq ${}, %rax", i));
+                }
+                Value::Str(s) => {
+                    let label = &self.string_literals.get(s).unwrap();
+                    self.emit(&format!("leaq {}(%rip), %rax", label));
+                }
+            },
             Expr::Var { name } => {
                 if let Some(offset) = self.var_offsets.get(name) {
                     self.emit(&format!("movq {}(%rbp), %rax", offset));
@@ -275,12 +306,61 @@ impl Codegen {
         }
     }
 
+    fn collect_string_literals(&mut self, stmts: &[Stmt]) {
+        fn walk_expr(cg: &mut Codegen, expr: &Expr) {
+            match expr {
+                Expr::Const {
+                    value: Value::Str(s),
+                } => {
+                    if !cg.string_literals.contains_key(s) {
+                        let lbl = cg.new_label("str");
+                        cg.string_literals.insert(s.clone(), lbl);
+                    }
+                }
+                Expr::Const { .. } | Expr::Var { .. } => {}
+                Expr::Add { lhs, rhs } | Expr::Lt { lhs, rhs } => {
+                    walk_expr(cg, lhs);
+                    walk_expr(cg, rhs);
+                }
+                Expr::FnCall { args, .. } => {
+                    for arg in args {
+                        walk_expr(cg, arg);
+                    }
+                }
+            }
+        }
+
+        for stmt in stmts {
+            match stmt {
+                Stmt::FnDecl { body, .. } => {
+                    self.collect_string_literals(body);
+                }
+                Stmt::VarDecl { value, .. } => {
+                    walk_expr(self, value);
+                }
+                Stmt::Print { expr } | Stmt::Return { expr } => {
+                    walk_expr(self, expr);
+                }
+                Stmt::If {
+                    cond,
+                    then,
+                    else_branch,
+                } => {
+                    walk_expr(self, cond);
+                    self.collect_string_literals(then);
+                    if let Some(else_stmts) = else_branch {
+                        self.collect_string_literals(else_stmts);
+                    }
+                }
+            }
+        }
+    }
+
     fn format_asm(&self) -> String {
         self.output
-            .lines()
+            .iter()
             .map(|line| {
-                let trimmed = line.trim_end();
-                if trimmed.ends_with(':') || trimmed.starts_with('.') || trimmed.is_empty() {
+                if line.ends_with(':') || line.starts_with('.') || line.is_empty() {
                     line.to_string()
                 } else {
                     format!("  {}", line)
