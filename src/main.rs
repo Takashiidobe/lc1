@@ -211,7 +211,7 @@ fn main() {
                 ("f".into(), Type::Str),
                 ("g".into(), Type::Str),
             ],
-            return_type: Type::Int, // returns 0 by default
+            return_type: Type::Null,
             body: vec![
                 Print {
                     expr: Var { name: "a".into() },

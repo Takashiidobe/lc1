@@ -6,6 +6,7 @@ use crate::codegen::Type;
 pub enum Value {
     Int(i64),
     Str(String),
+    Null,
 }
 
 impl From<i64> for Value {
@@ -31,6 +32,7 @@ impl Display for Value {
         match self {
             Value::Int(i) => f.write_str(&i.to_string()),
             Value::Str(s) => f.write_str(s),
+            Value::Null => f.write_str("null"),
         }
     }
 }

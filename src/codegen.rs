@@ -6,6 +6,7 @@ use crate::ast::{Expr, Stmt, Value};
 pub enum Type {
     Int,
     Str,
+    Null,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
@@ -59,7 +60,7 @@ impl Codegen {
     fn lookup_var_type(&self, name: &str) -> Type {
         for scope in self.var_types.iter().rev() {
             if let Some(ty) = scope.get(name) {
-                return ty.clone();
+                return *ty;
             }
         }
         panic!("unknown variable `{}`", name);
@@ -71,14 +72,14 @@ impl Codegen {
             Const { value } => match value {
                 Value::Int(_) => Type::Int,
                 Value::Str(_) => Type::Str,
+                Value::Null => Type::Null,
             },
             Var { name } => self.lookup_var_type(name),
             Add { .. } | Lt { .. } => Type::Int,
-            FnCall { name, .. } => self
+            FnCall { name, .. } => *self
                 .fn_ret_types
                 .get(name.as_str())
-                .unwrap_or_else(|| panic!("unknown fn `{}`", name))
-                .clone(),
+                .unwrap_or_else(|| panic!("unknown fn `{}`", name)),
         }
     }
 
@@ -121,6 +122,7 @@ impl Codegen {
         self.emit("fmt: .string \"%ld\\n\"");
 
         self.emit(".section .rodata");
+        self.emit(".L_null: .string \"null\"");
         let literals = self.string_literals.clone();
         for (s, label) in &literals {
             let esc = s.escape_default().to_string();
@@ -178,6 +180,10 @@ impl Codegen {
                         self.emit("call printf");
                     }
                     Type::Str => {
+                        self.emit("movq %rax, %rdi");
+                        self.emit("call puts");
+                    }
+                    Type::Null => {
                         self.emit("movq %rax, %rdi");
                         self.emit("call puts");
                     }
@@ -239,7 +245,7 @@ impl Codegen {
                 }
 
                 if !has_explicit_return {
-                    self.emit("movq $0, %rax");
+                    self.gen_expr(&Expr::Const { value: Value::Null });
                 }
 
                 if self.stack_offset < function_start_offset {
@@ -321,6 +327,9 @@ impl Codegen {
                 Value::Str(s) => {
                     let label = &self.string_literals.get(s).unwrap();
                     self.emit(&format!("leaq {}(%rip), %rax", label));
+                }
+                Value::Null => {
+                    self.emit("leaq .L_null(%rip), %rax");
                 }
             },
             Expr::Var { name } => {
