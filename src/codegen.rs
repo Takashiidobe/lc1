@@ -2,7 +2,7 @@ use std::{cmp::max, collections::HashMap};
 
 use crate::ast::{Expr, Stmt, Value};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
 pub enum Type {
     Int,
     Str,
@@ -15,8 +15,9 @@ pub struct Codegen {
     var_offsets: HashMap<String, i64>,
     stack_offset: i64,
     max_offset: u64,
-    in_function: bool,
     string_literals: HashMap<String, String>,
+    fn_ret_types: HashMap<String, Type>,
+    var_types: Vec<HashMap<String, Type>>,
 }
 
 fn arg_reg(index: usize) -> Option<&'static str> {
@@ -38,6 +39,47 @@ impl Codegen {
 
     fn emit(&mut self, line: &str) {
         self.output.push(line.trim().to_string());
+    }
+
+    fn enter_scope(&mut self) {
+        self.var_types.push(HashMap::new());
+    }
+
+    fn exit_scope(&mut self) {
+        self.var_types.pop();
+    }
+
+    fn insert_var_type(&mut self, name: String, ty: Type) {
+        self.var_types
+            .last_mut()
+            .expect("no scope open")
+            .insert(name, ty);
+    }
+
+    fn lookup_var_type(&self, name: &str) -> Type {
+        for scope in self.var_types.iter().rev() {
+            if let Some(ty) = scope.get(name) {
+                return ty.clone();
+            }
+        }
+        panic!("unknown variable `{}`", name);
+    }
+
+    fn type_of_expr(&self, expr: &Expr) -> Type {
+        use Expr::*;
+        match expr {
+            Const { value } => match value {
+                Value::Int(_) => Type::Int,
+                Value::Str(_) => Type::Str,
+            },
+            Var { name } => self.lookup_var_type(name),
+            Add { .. } | Lt { .. } => Type::Int,
+            FnCall { name, .. } => self
+                .fn_ret_types
+                .get(name.as_str())
+                .unwrap_or_else(|| panic!("unknown fn `{}`", name))
+                .clone(),
+        }
     }
 
     fn new_label(&mut self, prefix: &str) -> String {
@@ -117,26 +159,28 @@ impl Codegen {
     fn gen_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::VarDecl { name, value } => {
+                let ty = self.type_of_expr(value);
+                self.insert_var_type(name.clone(), ty);
                 self.gen_expr(value);
                 self.stack_offset -= 8;
                 self.emit(&format!("movq %rax, {}(%rbp)", self.stack_offset));
                 self.var_offsets.insert(name.clone(), self.stack_offset);
             }
             Stmt::Print { expr } => {
+                let ty = self.type_of_expr(expr);
                 self.gen_expr(expr);
 
-                // this needs to check if the evaluated expr is a Str/Int
-                if let Expr::Const {
-                    value: Value::Str(_),
-                } = expr
-                {
-                    self.emit("movq %rax, %rdi");
-                    self.emit("call puts");
-                } else {
-                    self.emit("movq %rax, %rsi");
-                    self.emit("leaq fmt(%rip), %rdi");
-                    self.emit("xor %rax, %rax");
-                    self.emit("call printf");
+                match ty {
+                    Type::Int => {
+                        self.emit("movq %rax, %rsi");
+                        self.emit("leaq fmt(%rip), %rdi");
+                        self.emit("xor %rax, %rax");
+                        self.emit("call printf");
+                    }
+                    Type::Str => {
+                        self.emit("movq %rax, %rdi");
+                        self.emit("call puts");
+                    }
                 }
             }
             Stmt::Return { expr } => {
@@ -149,14 +193,26 @@ impl Codegen {
                 self.emit("popq %rbp");
                 self.emit("ret");
             }
-            Stmt::FnDecl { name, args, body } => {
-                self.in_function = true;
+            Stmt::FnDecl {
+                name,
+                args,
+                body,
+                return_type,
+            } => {
                 self.emit(&format!("{}:", name));
                 self.emit("pushq %rbp");
                 self.emit("movq %rsp, %rbp");
                 let frame_bytes = (self.max_offset as i64) * 8;
                 self.emit(&format!("subq ${}, %rsp", frame_bytes));
-                for (i, arg) in args.iter().enumerate() {
+
+                self.fn_ret_types.insert(name.clone(), *return_type);
+
+                self.enter_scope();
+                for (arg_name, arg_type) in args {
+                    self.insert_var_type(arg_name.clone(), *arg_type);
+                }
+
+                for (i, (arg, _)) in args.iter().enumerate() {
                     let offset = -8 * (i as i64 + 1);
                     if let Some(reg) = arg_reg(i) {
                         self.emit(&format!("movq {}, {}(%rbp)", reg, offset));
@@ -167,6 +223,7 @@ impl Codegen {
                     }
                     self.var_offsets.insert(arg.clone(), offset);
                 }
+
                 self.stack_offset = -8 * args.len() as i64;
 
                 let function_start_offset = self.stack_offset;
@@ -194,9 +251,9 @@ impl Codegen {
                 self.emit("popq %rbp");
                 self.emit("ret");
 
-                self.in_function = false;
                 self.stack_offset = 0;
                 self.var_offsets.clear();
+                self.exit_scope();
             }
             Stmt::If {
                 cond,
@@ -219,9 +276,11 @@ impl Codegen {
                     .last()
                     .is_some_and(|stmt| matches!(stmt, Stmt::Return { .. }));
 
+                self.enter_scope();
                 for stmt in then {
                     self.gen_stmt(stmt);
                 }
+                self.exit_scope();
 
                 if else_branch.is_some() && !then_returns {
                     self.emit(&format!("jmp {}", end_label));
@@ -230,9 +289,11 @@ impl Codegen {
                 if let Some(else_stmts) = else_branch {
                     self.emit(&format!("{}:", else_label));
 
+                    self.enter_scope();
                     for stmt in else_stmts {
                         self.gen_stmt(stmt);
                     }
+                    self.exit_scope();
                 }
 
                 let needs_end_label = if let Some(else_stmts) = else_branch {

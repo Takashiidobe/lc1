@@ -1,6 +1,6 @@
 use lc1::{
     ast::{Expr, Stmt, Value},
-    codegen::Codegen,
+    codegen::{Codegen, Type},
 };
 
 use Expr::*;
@@ -11,14 +11,15 @@ fn main() {
         FnDecl {
             name: "add".to_string(),
             args: vec![
-                "a".into(),
-                "b".into(),
-                "c".into(),
-                "d".into(),
-                "e".into(),
-                "f".into(),
-                "g".into(),
+                ("a".into(), Type::Int),
+                ("b".into(), Type::Int),
+                ("c".into(), Type::Int),
+                ("d".into(), Type::Int),
+                ("e".into(), Type::Int),
+                ("f".into(), Type::Int),
+                ("g".into(), Type::Int),
             ],
+            return_type: Type::Int,
             body: vec![Return {
                 expr: Add {
                     lhs: Box::new(Var { name: "a".into() }),
@@ -93,6 +94,7 @@ fn main() {
         },
     ];
 
+    // A simple if‐program (no FnDecl here, so it stays the same)
     let if_program = vec![If {
         cond: Const {
             value: Value::Int(0),
@@ -109,6 +111,7 @@ fn main() {
         }]),
     }];
 
+    // Nested‐if with shadowed variable
     let nested_if = vec![
         VarDecl {
             name: "x".into(),
@@ -138,10 +141,12 @@ fn main() {
         },
     ];
 
+    // Fibonacci function, annotated as returning Int
     let fibonacci_program = vec![
         FnDecl {
             name: "fibonacci".to_string(),
-            args: vec!["n".into()],
+            args: vec![("n".into(), Type::Int)],
+            return_type: Type::Int,
             body: vec![If {
                 cond: Lt {
                     lhs: Box::new(Var { name: "n".into() }),
@@ -186,71 +191,75 @@ fn main() {
         },
     ];
 
-    let hello_world = vec![Stmt::Print {
-        expr: Expr::Const {
+    // Hello world (no FnDecl here)
+    let hello_world = vec![Print {
+        expr: Const {
             value: Value::Str("hello, world!".into()),
         },
     }];
 
+    // print7 now has seven String arguments, each annotated Type::Str
     let print_many = vec![
-        Stmt::FnDecl {
+        FnDecl {
             name: "print7".to_string(),
             args: vec![
-                "a".into(),
-                "b".into(),
-                "c".into(),
-                "d".into(),
-                "e".into(),
-                "f".into(),
-                "g".into(),
+                ("a".into(), Type::Str),
+                ("b".into(), Type::Str),
+                ("c".into(), Type::Str),
+                ("d".into(), Type::Str),
+                ("e".into(), Type::Str),
+                ("f".into(), Type::Str),
+                ("g".into(), Type::Str),
             ],
+            return_type: Type::Int, // returns 0 by default
             body: vec![
-                Stmt::Print {
-                    expr: Expr::Var { name: "a".into() },
+                Print {
+                    expr: Var { name: "a".into() },
                 },
-                Stmt::Print {
-                    expr: Expr::Var { name: "b".into() },
+                Print {
+                    expr: Var { name: "b".into() },
                 },
-                Stmt::Print {
-                    expr: Expr::Var { name: "c".into() },
+                Print {
+                    expr: Var { name: "c".into() },
                 },
-                Stmt::Print {
-                    expr: Expr::Var { name: "d".into() },
+                Print {
+                    expr: Var { name: "d".into() },
                 },
-                Stmt::Print {
-                    expr: Expr::Var { name: "e".into() },
+                Print {
+                    expr: Var { name: "e".into() },
                 },
-                Stmt::Print {
-                    expr: Expr::Var { name: "f".into() },
+                Print {
+                    expr: Var { name: "f".into() },
                 },
-                Stmt::Print {
-                    expr: Expr::Var { name: "g".into() },
+                Print {
+                    expr: Var { name: "g".into() },
                 },
             ],
         },
-        Stmt::Print {
-            expr: Expr::FnCall {
-                name: "print7".to_string(),
+        // call it once with seven distinct string literals
+        Print {
+            expr: FnCall {
+                name: "print7".into(),
                 args: vec![
-                    Expr::Const {
+                    Const {
                         value: Value::Str("one".into()),
                     },
-                    Expr::Const {
+                    Const {
                         value: Value::Str("two".into()),
                     },
-                    Expr::Const {
+                    Const {
                         value: Value::Str("three".into()),
                     },
-                    Expr::Const {
+                    Const {
                         value: Value::Str("four".into()),
                     },
-                    Expr::Const {
+                    Const {
                         value: Value::Str("five".into()),
                     },
-                    Expr::Const {
+                    Const {
                         value: Value::Str("six".into()),
                     },
-                    Expr::Const {
+                    Const {
                         value: Value::Str("seven".into()),
                     },
                 ],
@@ -260,7 +269,4 @@ fn main() {
 
     let mut codegen = Codegen::default();
     println!("{}", codegen.run(&print_many));
-
-    // let mut interpreter = Interpreter::default();
-    // interpreter.run(&fibonacci_program);
 }

@@ -1,9 +1,29 @@
 use std::fmt::{self, Display};
 
+use crate::codegen::Type;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Value {
     Int(i64),
     Str(String),
+}
+
+impl From<i64> for Value {
+    fn from(i: i64) -> Self {
+        Value::Int(i)
+    }
+}
+
+impl From<String> for Value {
+    fn from(s: String) -> Self {
+        Value::Str(s)
+    }
+}
+
+impl From<&str> for Value {
+    fn from(s: &str) -> Self {
+        Value::Str(s.to_owned())
+    }
 }
 
 impl Display for Value {
@@ -40,8 +60,9 @@ impl Display for Expr {
 pub enum Stmt {
     FnDecl {
         name: String,
-        args: Vec<String>,
+        args: Vec<(String, Type)>,
         body: Vec<Stmt>,
+        return_type: Type,
     },
     VarDecl {
         name: String,
