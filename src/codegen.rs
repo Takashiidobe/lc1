@@ -2,11 +2,12 @@ use std::{cmp::max, collections::HashMap};
 
 use crate::ast::{Expr, Stmt, Value};
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Type {
     Int,
     Str,
     Null,
+    Array(Box<Type>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,7 +76,7 @@ impl Codegen {
     fn lookup_var_type(&self, name: &str) -> Type {
         for scope in self.var_types.iter().rev() {
             if let Some(ty) = scope.get(name) {
-                return *ty;
+                return ty.clone();
             }
         }
         panic!("unknown variable `{}`", name);
@@ -88,12 +89,14 @@ impl Codegen {
                 Value::Int(_) => Type::Int,
                 Value::Str(_) => Type::Str,
                 Value::Null => Type::Null,
+                Value::Array(_) => Type::Array(Box::new(Type::Int)),
             },
             Var { name } => self.lookup_var_type(name),
-            FnCall { name, .. } => *self
+            FnCall { name, .. } => self
                 .fn_ret_types
                 .get(name.as_str())
-                .unwrap_or_else(|| panic!("unknown fn `{}`", name)),
+                .unwrap_or_else(|| panic!("unknown fn `{}`", name))
+                .clone(),
             _ => Type::Int,
         }
     }
@@ -134,6 +137,9 @@ impl Codegen {
         self.collect_string_literals(stmts);
 
         self.emit(".section .data");
+        self.emit(r#"Larr_open:  .string "[""#);
+        self.emit(r#"Larr_sep:   .string ", ""#);
+        self.emit(r#"Larr_close: .string "]\n"#);
         self.emit("fmt: .string \"%ld\\n\"");
         self.emit("null: .string \"null\"");
 
@@ -173,6 +179,49 @@ impl Codegen {
         self.format_asm()
     }
 
+    fn gen_print_value(&mut self, expr: &Expr, ty: &Type) {
+        self.gen_expr(expr);
+
+        match ty {
+            Type::Int => {
+                self.emit("movq %rax, %rsi");
+                self.emit("leaq fmt(%rip), %rdi");
+                self.emit("xor %rax, %rax");
+                self.emit("call printf");
+            }
+
+            Type::Str | Type::Null => {
+                self.emit("movq %rax, %rdi");
+                self.emit("call puts");
+            }
+
+            Type::Array(elem_ty) => {
+                self.emit("leaq Larr_open(%rip), %rdi");
+                self.emit("call puts");
+
+                if let Expr::Const {
+                    value: Value::Array(items),
+                } = expr
+                {
+                    for (i, item_val) in items.iter().enumerate() {
+                        let item_expr = Expr::Const {
+                            value: item_val.clone(),
+                        };
+                        self.gen_print_value(&item_expr, elem_ty);
+
+                        if i + 1 < items.len() {
+                            self.emit("leaq Larr_sep(%rip), %rdi");
+                            self.emit("call puts");
+                        }
+                    }
+                }
+
+                self.emit("leaq Larr_close(%rip), %rdi");
+                self.emit("call puts");
+            }
+        }
+    }
+
     fn gen_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::VarDecl { name, value } => {
@@ -194,11 +243,11 @@ impl Codegen {
                         self.emit("xor %rax, %rax");
                         self.emit("call printf");
                     }
-                    Type::Str => {
+                    Type::Str | Type::Null => {
                         self.emit("movq %rax, %rdi");
                         self.emit("call puts");
                     }
-                    Type::Null => {
+                    Type::Array(_) => {
                         self.emit("movq %rax, %rdi");
                         self.emit("call puts");
                     }
@@ -226,11 +275,11 @@ impl Codegen {
                 let frame_bytes = (self.max_offset as i64) * 8;
                 self.emit(&format!("subq ${}, %rsp", frame_bytes));
 
-                self.fn_ret_types.insert(name.clone(), *return_type);
+                self.fn_ret_types.insert(name.clone(), return_type.clone());
 
                 self.enter_scope();
                 for (arg_name, arg_type) in args {
-                    self.insert_var_type(arg_name.clone(), *arg_type);
+                    self.insert_var_type(arg_name.clone(), arg_type.clone());
                 }
 
                 for (i, (arg, _)) in args.iter().enumerate() {
@@ -348,6 +397,19 @@ impl Codegen {
                 Value::Null => {
                     self.emit("leaq null(%rip), %rax");
                 }
+                Value::Array(items) => {
+                    let size = items.len() * 8;
+                    self.emit(&format!("subq ${}, %rsp", size));
+
+                    for (i, value) in items.iter().enumerate() {
+                        self.gen_expr(&Expr::Const {
+                            value: value.clone(),
+                        });
+                        self.emit(&format!("movq %rax, {}(%rsp)", i * 8));
+                    }
+
+                    self.emit("movq %rsp, %rax");
+                }
             },
             Expr::Var { name } => {
                 if let Some(offset) = self.var_offsets.get(name) {
@@ -438,6 +500,14 @@ impl Codegen {
             Expr::Neg { expr } => {
                 self.gen_expr(expr);
                 self.emit("negq %rax");
+            }
+            Expr::Array { items } => {
+                let size = items.len() * 8;
+                self.emit(&format!("subq ${}, %rsp", size));
+                for (i, _) in items.iter().enumerate() {
+                    self.emit(&format!("movq %rax, {}(%rsp)", i * 8));
+                }
+                self.emit("leaq 0(%rsp), %rax");
             }
         }
     }

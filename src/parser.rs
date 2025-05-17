@@ -271,6 +271,20 @@ impl Parser {
 
     fn parse_primary(&mut self) -> Expr {
         match self.peek().clone() {
+            Token::LBracket => {
+                self.next();
+                let mut items = vec![];
+                if !self.consume(&Token::RBracket) {
+                    loop {
+                        items.push(self.parse_expr());
+                        if self.consume(&Token::RBracket) {
+                            break;
+                        }
+                        self.expect(&Token::Comma);
+                    }
+                }
+                Expr::Array { items }
+            }
             Token::Int(n) => {
                 self.next();
                 Expr::Const {

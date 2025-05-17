@@ -35,6 +35,7 @@ impl Interpreter {
                         std::process::exit(0);
                     }
                     Value::Null => std::process::exit(0),
+                    Value::Array(_) => std::process::exit(0),
                 }
             }
         }
@@ -59,8 +60,21 @@ impl Interpreter {
                 let v = self.eval(expr);
                 match v {
                     Value::Int(i) => println!("{}", i),
-                    Value::Str(s) => println!("{}", s),
+                    Value::Str(s) => println!("\"{}\"", s),
                     Value::Null => println!("null"),
+                    Value::Array(values) => {
+                        let mut s = String::from("[");
+                        for item in values {
+                            s += &item.to_string();
+                            s += ", ";
+                        }
+                        if s.len() > 2 {
+                            s.pop();
+                            s.pop();
+                        }
+                        s.push(']');
+                        println!("{}", s)
+                    }
                 }
                 None
             }
@@ -117,7 +131,6 @@ impl Interpreter {
                     _ => panic!("Comparison requires two ints"),
                 }
             }
-
             Expr::Le { lhs, rhs } => {
                 let l = self.eval(lhs);
                 let r = self.eval(rhs);
@@ -126,7 +139,6 @@ impl Interpreter {
                     _ => panic!("Comparison requires two ints"),
                 }
             }
-
             Expr::Gt { lhs, rhs } => {
                 let l = self.eval(lhs);
                 let r = self.eval(rhs);
@@ -135,7 +147,6 @@ impl Interpreter {
                     _ => panic!("Comparison requires two ints"),
                 }
             }
-
             Expr::Ge { lhs, rhs } => {
                 let l = self.eval(lhs);
                 let r = self.eval(rhs);
@@ -144,7 +155,6 @@ impl Interpreter {
                     _ => panic!("Comparison requires two ints"),
                 }
             }
-
             Expr::Eq { lhs, rhs } => {
                 let l = self.eval(lhs);
                 let r = self.eval(rhs);
@@ -156,7 +166,6 @@ impl Interpreter {
                 };
                 Value::Int(if result { 1 } else { 0 })
             }
-
             Expr::Ne { lhs, rhs } => {
                 let l = self.eval(lhs);
                 let r = self.eval(rhs);
@@ -203,6 +212,13 @@ impl Interpreter {
                 } else {
                     Value::Int(0)
                 }
+            }
+            Expr::Array { items } => {
+                let mut values = Vec::with_capacity(items.len());
+                for item in items {
+                    values.push(self.eval(item));
+                }
+                Value::Array(values)
             }
         }
     }

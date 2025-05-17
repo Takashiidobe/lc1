@@ -13,11 +13,13 @@ pub enum Token {
     Int(i64),
     Str(String),
 
-    // Operators
+    // Arithmetic
     Plus,
     Minus,
-    Assign, // '='
-    Arrow,  // '->'
+
+    // Operators
+    Assign,
+    Arrow, // '->'
 
     // Relational Ops
     Lt,
@@ -28,13 +30,15 @@ pub enum Token {
     Ge,
 
     // Delimiters
-    LParen, // '('
-    RParen, // ')'
-    LBrace, // '{'
-    RBrace, // '}'
-    Comma,  // ','
-    Colon,  // ':'
-    Semi,   // ';'
+    LBracket,
+    RBracket,
+    LParen,
+    RParen,
+    LBrace,
+    RBrace,
+    Comma,
+    Colon,
+    Semi,
 
     Eof,
 }
@@ -173,6 +177,14 @@ impl Lexer<'_> {
                 self.read_char();
                 Token::RParen
             }
+            Some('[') => {
+                self.read_char();
+                Token::LBracket
+            }
+            Some(']') => {
+                self.read_char();
+                Token::RBracket
+            }
             Some('{') => {
                 self.read_char();
                 Token::LBrace
@@ -193,12 +205,10 @@ impl Lexer<'_> {
                 self.read_char();
                 Token::Semi
             }
-
             Some('"') => {
                 let lit = self.read_string();
                 Token::Str(lit)
             }
-
             Some(c) if c.is_ascii_digit() => {
                 let n = self.read_number();
                 Token::Int(n)

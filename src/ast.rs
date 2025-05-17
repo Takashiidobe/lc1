@@ -6,6 +6,7 @@ use crate::codegen::Type;
 pub enum Value {
     Int(i64),
     Str(String),
+    Array(Vec<Value>),
     Null,
 }
 
@@ -33,6 +34,18 @@ impl Display for Value {
             Value::Int(i) => f.write_str(&i.to_string()),
             Value::Str(s) => f.write_str(s),
             Value::Null => f.write_str("null"),
+            Value::Array(items) => {
+                let mut s = String::from("[");
+                for item in items {
+                    s += &item.to_string();
+                    s += ", "
+                }
+                if s.len() > 2 {
+                    s.pop();
+                    s.pop();
+                }
+                f.write_str(&s)
+            }
         }
     }
 }
@@ -47,6 +60,7 @@ pub enum Expr {
     Ge { lhs: Box<Expr>, rhs: Box<Expr> },
     Eq { lhs: Box<Expr>, rhs: Box<Expr> },
     Ne { lhs: Box<Expr>, rhs: Box<Expr> },
+    Array { items: Vec<Expr> },
     Const { value: Value },
     Var { name: String },
     FnCall { name: String, args: Vec<Expr> },
@@ -66,6 +80,19 @@ impl Display for Expr {
             Expr::Const { value } => f.write_fmt(format_args!("{value}")),
             Expr::Var { name } => f.write_fmt(format_args!("{name}")),
             Expr::FnCall { name, args } => f.write_fmt(format_args!("{name}({args:?})")),
+            Expr::Array { items } => {
+                let mut s = String::from("[");
+                for item in items {
+                    s += &item.to_string();
+                    s += ", "
+                }
+                if s.len() > 2 {
+                    s.pop();
+                    s.pop();
+                }
+                s.push(']');
+                f.write_str(&s)
+            }
         }
     }
 }
