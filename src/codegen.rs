@@ -9,7 +9,7 @@ pub enum Type {
     Null,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Codegen {
     output: Vec<String>,
     label_count: usize,
@@ -19,6 +19,21 @@ pub struct Codegen {
     string_literals: HashMap<String, String>,
     fn_ret_types: HashMap<String, Type>,
     var_types: Vec<HashMap<String, Type>>,
+}
+
+impl Default for Codegen {
+    fn default() -> Self {
+        Self {
+            output: Default::default(),
+            label_count: Default::default(),
+            var_offsets: Default::default(),
+            stack_offset: Default::default(),
+            max_offset: Default::default(),
+            string_literals: Default::default(),
+            fn_ret_types: Default::default(),
+            var_types: vec![Default::default()],
+        }
+    }
 }
 
 fn arg_reg(index: usize) -> Option<&'static str> {
@@ -75,12 +90,11 @@ impl Codegen {
                 Value::Null => Type::Null,
             },
             Var { name } => self.lookup_var_type(name),
-            Add { .. } | Lt { .. } => Type::Int,
             FnCall { name, .. } => *self
                 .fn_ret_types
                 .get(name.as_str())
                 .unwrap_or_else(|| panic!("unknown fn `{}`", name)),
-            Neg { .. } => Type::Int,
+            _ => Type::Int,
         }
     }
 
@@ -356,6 +370,51 @@ impl Codegen {
                 self.emit("popq %rbx");
                 self.emit("cmpq %rax, %rbx");
                 self.emit("setl %al");
+                self.emit("movzbq %al, %rax");
+            }
+            Expr::Le { lhs, rhs } => {
+                self.gen_expr(lhs);
+                self.emit("pushq %rax");
+                self.gen_expr(rhs);
+                self.emit("popq %rbx");
+                self.emit("cmpq %rax, %rbx");
+                self.emit("setle %al");
+                self.emit("movzbq %al, %rax");
+            }
+            Expr::Gt { lhs, rhs } => {
+                self.gen_expr(lhs);
+                self.emit("pushq %rax");
+                self.gen_expr(rhs);
+                self.emit("popq %rbx");
+                self.emit("cmpq %rax, %rbx");
+                self.emit("setg %al");
+                self.emit("movzbq %al, %rax");
+            }
+            Expr::Ge { lhs, rhs } => {
+                self.gen_expr(lhs);
+                self.emit("pushq %rax");
+                self.gen_expr(rhs);
+                self.emit("popq %rbx");
+                self.emit("cmpq %rax, %rbx");
+                self.emit("setge %al");
+                self.emit("movzbq %al, %rax");
+            }
+            Expr::Eq { lhs, rhs } => {
+                self.gen_expr(lhs);
+                self.emit("pushq %rax");
+                self.gen_expr(rhs);
+                self.emit("popq %rbx");
+                self.emit("cmpq %rax, %rbx");
+                self.emit("sete %al");
+                self.emit("movzbq %al, %rax");
+            }
+            Expr::Ne { lhs, rhs } => {
+                self.gen_expr(lhs);
+                self.emit("pushq %rax");
+                self.gen_expr(rhs);
+                self.emit("popq %rbx");
+                self.emit("cmpq %rax, %rbx");
+                self.emit("setne %al");
                 self.emit("movzbq %al, %rax");
             }
             Expr::FnCall { name, args } => {

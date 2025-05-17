@@ -44,10 +44,7 @@ impl Interpreter {
     pub fn exec(&mut self, stmt: &Stmt) -> Option<Value> {
         match stmt {
             Stmt::FnDecl {
-                name,
-                args,
-                body,
-                return_type,
+                name, args, body, ..
             } => {
                 let names = args.clone();
                 self.fns.insert(name.clone(), (names, body.clone()));
@@ -104,7 +101,6 @@ impl Interpreter {
                     _ => panic!("Unary minus on non-int"),
                 }
             }
-
             Expr::Add { lhs, rhs } => {
                 let l = self.eval(lhs);
                 let r = self.eval(rhs);
@@ -113,7 +109,6 @@ impl Interpreter {
                     _ => panic!("Addition requires two ints"),
                 }
             }
-
             Expr::Lt { lhs, rhs } => {
                 let l = self.eval(lhs);
                 let r = self.eval(rhs);
@@ -123,8 +118,57 @@ impl Interpreter {
                 }
             }
 
-            Expr::Const { value } => value.clone(),
+            Expr::Le { lhs, rhs } => {
+                let l = self.eval(lhs);
+                let r = self.eval(rhs);
+                match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Value::Int(if a <= b { 1 } else { 0 }),
+                    _ => panic!("Comparison requires two ints"),
+                }
+            }
 
+            Expr::Gt { lhs, rhs } => {
+                let l = self.eval(lhs);
+                let r = self.eval(rhs);
+                match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Value::Int(if a > b { 1 } else { 0 }),
+                    _ => panic!("Comparison requires two ints"),
+                }
+            }
+
+            Expr::Ge { lhs, rhs } => {
+                let l = self.eval(lhs);
+                let r = self.eval(rhs);
+                match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Value::Int(if a >= b { 1 } else { 0 }),
+                    _ => panic!("Comparison requires two ints"),
+                }
+            }
+
+            Expr::Eq { lhs, rhs } => {
+                let l = self.eval(lhs);
+                let r = self.eval(rhs);
+                let result = match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => a == b,
+                    (Value::Str(ref a), Value::Str(ref b)) => a == b,
+                    (Value::Null, Value::Null) => true,
+                    _ => false,
+                };
+                Value::Int(if result { 1 } else { 0 })
+            }
+
+            Expr::Ne { lhs, rhs } => {
+                let l = self.eval(lhs);
+                let r = self.eval(rhs);
+                let result = match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => a != b,
+                    (Value::Str(ref a), Value::Str(ref b)) => a != b,
+                    (Value::Null, Value::Null) => false,
+                    _ => true,
+                };
+                Value::Int(if result { 1 } else { 0 })
+            }
+            Expr::Const { value } => value.clone(),
             Expr::Var { name } => {
                 for frame in self.stack.iter().rev() {
                     if let Some(v) = frame.vars.get(name) {
@@ -133,7 +177,6 @@ impl Interpreter {
                 }
                 panic!("Undefined variable: {}", name);
             }
-
             Expr::FnCall { name, args } => {
                 let (params, body) = self
                     .fns

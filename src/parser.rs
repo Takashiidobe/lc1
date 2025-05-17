@@ -187,17 +187,61 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> Expr {
-        self.parse_lt()
+        self.parse_eq()
     }
 
-    fn parse_lt(&mut self) -> Expr {
+    fn parse_eq(&mut self) -> Expr {
+        let mut left = self.parse_rel();
+        loop {
+            if self.consume(&Token::Eq) {
+                let right = self.parse_rel();
+                left = Expr::Eq {
+                    lhs: Box::new(left),
+                    rhs: Box::new(right),
+                };
+            } else if self.consume(&Token::Ne) {
+                let right = self.parse_rel();
+                left = Expr::Ne {
+                    lhs: Box::new(left),
+                    rhs: Box::new(right),
+                };
+            } else {
+                break;
+            }
+        }
+        left
+    }
+
+    fn parse_rel(&mut self) -> Expr {
         let mut left = self.parse_add();
-        while self.consume(&Token::Lt) {
-            let right = self.parse_add();
-            left = Expr::Lt {
-                lhs: Box::new(left),
-                rhs: Box::new(right),
-            };
+        loop {
+            if self.consume(&Token::Lt) {
+                let right = self.parse_add();
+                left = Expr::Lt {
+                    lhs: Box::new(left),
+                    rhs: Box::new(right),
+                };
+            } else if self.consume(&Token::Le) {
+                let right = self.parse_add();
+                left = Expr::Le {
+                    lhs: Box::new(left),
+                    rhs: Box::new(right),
+                };
+            } else if self.consume(&Token::Gt) {
+                let right = self.parse_add();
+                left = Expr::Gt {
+                    lhs: Box::new(left),
+                    rhs: Box::new(right),
+                };
+            } else if self.consume(&Token::Ge) {
+                let right = self.parse_add();
+                left = Expr::Ge {
+                    lhs: Box::new(left),
+                    rhs: Box::new(right),
+                };
+            } else {
+                break;
+            }
         }
         left
     }

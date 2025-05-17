@@ -15,10 +15,17 @@ pub enum Token {
 
     // Operators
     Plus,
-    Lt,
     Minus,
     Assign, // '='
     Arrow,  // '->'
+
+    // Relational Ops
+    Lt,
+    Le,
+    Eq,
+    Ne,
+    Gt,
+    Ge,
 
     // Delimiters
     LParen, // '('
@@ -116,6 +123,27 @@ impl Lexer<'_> {
             return Token::Arrow;
         }
 
+        if self.ch == Some('=') && self.peek_char() == Some('=') {
+            self.read_char();
+            self.read_char();
+            return Token::Eq;
+        }
+        if self.ch == Some('!') && self.peek_char() == Some('=') {
+            self.read_char();
+            self.read_char();
+            return Token::Ne;
+        }
+        if self.ch == Some('<') && self.peek_char() == Some('=') {
+            self.read_char();
+            self.read_char();
+            return Token::Le;
+        }
+        if self.ch == Some('>') && self.peek_char() == Some('=') {
+            self.read_char();
+            self.read_char();
+            return Token::Ge;
+        }
+
         let tok = match self.ch {
             Some('=') => {
                 self.read_char();
@@ -132,6 +160,10 @@ impl Lexer<'_> {
             Some('<') => {
                 self.read_char();
                 Token::Lt
+            }
+            Some('>') => {
+                self.read_char();
+                Token::Gt
             }
             Some('(') => {
                 self.read_char();
