@@ -58,24 +58,7 @@ impl Interpreter {
             }
             Stmt::Print { expr } => {
                 let v = self.eval(expr);
-                match v {
-                    Value::Int(i) => println!("{}", i),
-                    Value::Str(s) => println!("\"{}\"", s),
-                    Value::Null => println!("null"),
-                    Value::Array(values) => {
-                        let mut s = String::from("[");
-                        for item in values {
-                            s += &item.to_string();
-                            s += ", ";
-                        }
-                        if s.len() > 2 {
-                            s.pop();
-                            s.pop();
-                        }
-                        s.push(']');
-                        println!("{}", s)
-                    }
-                }
+                println!("{}", v);
                 None
             }
             Stmt::Return { expr } => Some(self.eval(expr)),

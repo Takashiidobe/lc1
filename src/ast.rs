@@ -32,19 +32,17 @@ impl Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Value::Int(i) => f.write_str(&i.to_string()),
-            Value::Str(s) => f.write_str(s),
+            Value::Str(s) => f.write_str(&format!("\"{}\"", s)),
             Value::Null => f.write_str("null"),
             Value::Array(items) => {
-                let mut s = String::from("[");
-                for item in items {
-                    s += &item.to_string();
-                    s += ", "
+                write!(f, "[")?;
+                for (i, v) in items.iter().enumerate() {
+                    write!(f, "{}", v)?;
+                    if i + 1 < items.len() {
+                        write!(f, ", ")?;
+                    }
                 }
-                if s.len() > 2 {
-                    s.pop();
-                    s.pop();
-                }
-                f.write_str(&s)
+                write!(f, "]")
             }
         }
     }
@@ -81,17 +79,14 @@ impl Display for Expr {
             Expr::Var { name } => f.write_fmt(format_args!("{name}")),
             Expr::FnCall { name, args } => f.write_fmt(format_args!("{name}({args:?})")),
             Expr::Array { items } => {
-                let mut s = String::from("[");
-                for item in items {
-                    s += &item.to_string();
-                    s += ", "
+                write!(f, "[")?;
+                for (i, v) in items.iter().enumerate() {
+                    write!(f, "{}", v)?;
+                    if i + 1 < items.len() {
+                        write!(f, ", ")?;
+                    }
                 }
-                if s.len() > 2 {
-                    s.pop();
-                    s.pop();
-                }
-                s.push(']');
-                f.write_str(&s)
+                write!(f, "]")
             }
         }
     }
