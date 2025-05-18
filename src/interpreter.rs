@@ -51,8 +51,13 @@ impl Interpreter {
             }
             Stmt::Print { expr } => {
                 let v = self.eval(expr);
-                print!("{}", v);
-                io::stdout().flush().unwrap();
+                // handle newlines
+                if v == Value::Str("\n".to_string()) {
+                    println!();
+                } else {
+                    print!("{}", v);
+                    io::stdout().flush().unwrap();
+                }
                 None
             }
             Stmt::Return { expr } => Some(self.eval(expr)),
