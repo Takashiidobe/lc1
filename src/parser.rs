@@ -93,8 +93,7 @@ impl Parser {
         let return_type = if self.consume(&Token::Arrow) {
             self.parse_type()
         } else {
-            // default to Int
-            Type::Int
+            Type::Null
         };
 
         // body
@@ -265,11 +264,30 @@ impl Parser {
                 expr: Box::new(inner),
             }
         } else {
-            self.parse_primary()
+            self.parse_postfix()
         }
     }
 
+    fn parse_postfix(&mut self) -> Expr {
+        let mut expr = self.parse_primary();
+
+        while self.consume(&Token::LBracket) {
+            let index_expr = self.parse_expr();
+            self.expect(&Token::RBracket);
+            expr = Expr::Index {
+                array: Box::new(expr),
+                index: Box::new(index_expr),
+            };
+        }
+
+        expr
+    }
+
     fn parse_primary(&mut self) -> Expr {
+        self.process_primary()
+    }
+
+    fn process_primary(&mut self) -> Expr {
         match self.peek().clone() {
             Token::LBracket => {
                 self.next();

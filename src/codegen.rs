@@ -162,13 +162,13 @@ impl Codegen {
         self.emit("null: .string \"null\"");
 
         self.emit(".section .rodata");
+        self.emit_oob_handler();
         let literals = self.string_literals.clone();
         for (s, label) in &literals {
             let esc = s.escape_default().to_string();
             self.emit(&format!("{}: .string \"{}\"", label, esc));
         }
 
-        self.emit(".text");
         self.emit(".globl main");
         self.emit("");
 
@@ -572,6 +572,23 @@ impl Codegen {
 
                 self.emit("movq %r12, %rax");
             }
+            Expr::Index { array, index } => {
+                self.gen_expr(array);
+
+                self.emit("movq %rax, %r12");
+
+                self.gen_expr(index);
+                self.emit("cmpq $0, %rax");
+                self.emit("jl .index_oob");
+
+                self.emit("movq (%r12), %r13");
+                self.emit("cmpq %r13, %rax");
+                self.emit("jge .index_oob");
+
+                self.emit("lea 8(%r12,%rax,8), %rax");
+
+                self.emit("movq (%rax), %rax");
+            }
         }
     }
 
@@ -637,5 +654,24 @@ impl Codegen {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    fn emit_oob_handler(&mut self) {
+        self.emit(".L.oob_fmt:");
+        self.emit(".string \"\\nIndex out of bounds: accessing %p[%ld]\\n\"");
+
+        self.emit(".text");
+        self.emit(".globl index_oob");
+        self.emit(".type index_oob, @function");
+        self.emit(".index_oob:");
+
+        self.emit("lea .L.oob_fmt(%rip), %rdi");
+        self.emit("mov %rax, %rdx");
+        self.emit("mov %r12, %rsi");
+
+        self.emit("xor %rax, %rax");
+        self.emit("call printf@PLT");
+        self.emit("call exit@PLT");
+        self.emit("ud2");
     }
 }

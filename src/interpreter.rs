@@ -2,7 +2,10 @@ use crate::{
     ast::{Expr, Stmt, Value},
     codegen::Type,
 };
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    io::{self, Write as _},
+};
 
 #[derive(Default, Clone, PartialEq, Eq)]
 pub struct StackFrame {
@@ -58,7 +61,8 @@ impl Interpreter {
             }
             Stmt::Print { expr } => {
                 let v = self.eval(expr);
-                println!("{}", v);
+                print!("{}", v);
+                io::stdout().flush().unwrap();
                 None
             }
             Stmt::Return { expr } => Some(self.eval(expr)),
@@ -202,6 +206,23 @@ impl Interpreter {
                     values.push(self.eval(item));
                 }
                 Value::Array(values)
+            }
+            Expr::Index { array, index } => {
+                let arr_val = self.eval(array);
+                let vec = if let Value::Array(v) = arr_val {
+                    v
+                } else {
+                    panic!("Type error: attempted indexing on non-array {:?}", arr_val);
+                };
+                let idx = self.eval(index).to_int();
+                if idx < 0 || (idx as usize) >= vec.len() {
+                    panic!(
+                        "Index out of bounds: {} on array of length {}",
+                        idx,
+                        vec.len()
+                    );
+                }
+                vec[idx as usize].clone()
             }
         }
     }

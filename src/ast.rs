@@ -10,6 +10,15 @@ pub enum Value {
     Null,
 }
 
+impl Value {
+    pub fn to_int(&self) -> i64 {
+        match self {
+            Value::Int(i) => *i,
+            _ => panic!("Expected integer, got {:?}", self),
+        }
+    }
+}
+
 impl From<i64> for Value {
     fn from(i: i64) -> Self {
         Value::Int(i)
@@ -62,6 +71,7 @@ pub enum Expr {
     Const { value: Value },
     Var { name: String },
     FnCall { name: String, args: Vec<Expr> },
+    Index { array: Box<Expr>, index: Box<Expr> },
 }
 
 impl Display for Expr {
@@ -88,6 +98,7 @@ impl Display for Expr {
                 }
                 write!(f, "]")
             }
+            Expr::Index { array, index } => f.write_fmt(format_args!("{array}[{index}]")),
         }
     }
 }
