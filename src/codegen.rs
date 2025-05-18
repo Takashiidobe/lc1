@@ -156,7 +156,7 @@ impl Codegen {
         self.emit(".section .data");
         self.emit(r#"Larr_open:  .string "[""#);
         self.emit(r#"Larr_sep:   .string ", ""#);
-        self.emit(r#"Larr_close: .string "]\n""#);
+        self.emit(r#"Larr_close: .string "]""#);
         self.emit("fmt: .string \"%ld\"");
         self.emit("printf_str: .string \"%s\"");
         self.emit("null: .string \"null\"");
@@ -219,48 +219,83 @@ impl Codegen {
         }
     }
 
+    fn emit_print_array(&mut self, elem_ty: &Type) {
+        self.emit("movq %rax, %r12");
+        self.emit("movq (%r12), %r13");
+        self.emit("xorq %r14, %r14");
+
+        self.emit("xor  %rax, %rax");
+        self.emit("leaq Larr_open(%rip), %rsi");
+        self.emit("leaq printf_str(%rip), %rdi");
+        self.emit("call printf");
+
+        let loop_lbl = self.new_label("array_loop");
+        let no_sep_lbl = self.new_label("array_no_sep");
+        let end_lbl = self.new_label("array_end");
+
+        self.emit(&format!("{}:", loop_lbl));
+        self.emit("cmpq %r13, %r14");
+        self.emit(&format!("jge {}", end_lbl));
+
+        self.emit("cmpq $0, %r14");
+        self.emit(&format!("je {}", no_sep_lbl));
+        self.emit("xor  %rax, %rax");
+        self.emit("leaq Larr_sep(%rip), %rsi");
+        self.emit("leaq printf_str(%rip), %rdi");
+        self.emit("call printf");
+
+        self.emit(&format!("{}:", no_sep_lbl));
+
+        self.emit("movq 8(%r12,%r14,8), %rax");
+
+        match elem_ty {
+            Type::Int => {
+                self.emit("movq %rax, %rsi");
+                self.emit("leaq fmt(%rip), %rdi");
+                self.emit("xor  %rax, %rax");
+                self.emit("call printf");
+            }
+
+            Type::Str | Type::Null => {
+                self.emit("movq %rax, %rsi");
+                self.emit("leaq printf_str(%rip), %rdi");
+                self.emit("xor  %rax, %rax");
+                self.emit("call printf");
+            }
+            Type::Array(inner_ty) => {
+                self.emit("pushq %r12");
+                self.emit("pushq %r13");
+                self.emit("pushq %r14");
+
+                self.emit_print_array(inner_ty);
+
+                self.emit("popq %r14");
+                self.emit("popq %r13");
+                self.emit("popq %r12");
+            }
+        }
+
+        self.emit("incq %r14");
+        self.emit(&format!("jmp {}", loop_lbl));
+
+        self.emit(&format!("{}:", end_lbl));
+        self.emit("xor  %rax, %rax");
+        self.emit("leaq Larr_close(%rip), %rsi");
+        self.emit("leaq printf_str(%rip), %rdi");
+        self.emit("call printf");
+    }
+
     fn gen_print_value(&mut self, expr: &Expr, ty: &Type) {
         self.gen_expr(expr);
 
         match ty {
             Type::Array(elem_ty) => {
-                self.emit("movq %rax, %r12");
-                self.emit("movq (%r12), %r13");
+                self.emit_print_array(elem_ty);
 
-                self.emit("xorq %r14, %r14");
-
-                self.emit("xor  %rax, %rax");
-                self.emit("leaq Larr_open(%rip), %rsi");
-                self.emit("leaq printf_str(%rip), %rdi");
-                self.emit("call printf");
-
-                let loop_lbl = self.new_label("array_loop");
-                let no_sep_lbl = self.new_label("array_no_sep");
-                let end_lbl = self.new_label("array_end");
-
-                self.emit(&format!("{}:", loop_lbl));
-                self.emit("cmpq %r13, %r14");
-                self.emit(&format!("jge {}", end_lbl));
-
-                self.emit("cmpq $0, %r14");
-                self.emit(&format!("je {}", no_sep_lbl));
-                self.emit("xor  %rax, %rax");
-                self.emit("leaq Larr_sep(%rip), %rsi");
-                self.emit("leaq printf_str(%rip), %rdi");
-                self.emit("call printf");
-
-                self.emit(&format!("{}:", no_sep_lbl));
-                self.emit("movq 8(%r12,%r14,8), %rax");
-                self.emit_print_reg(elem_ty);
-
-                self.emit("incq %r14");
-                self.emit(&format!("jmp {}", loop_lbl));
-
-                self.emit(&format!("{}:", end_lbl));
-                self.emit("xor  %rax, %rax");
-                self.emit("leaq Larr_close(%rip), %rsi");
-                self.emit("leaq printf_str(%rip), %rdi");
-                self.emit("call printf");
+                if let Type::Array(_) = ty {
+                    self.emit("movq %r12, %rdi");
+                    self.emit("call free");
+                }
             }
             _ => self.emit_print_reg(ty),
         }
@@ -280,21 +315,6 @@ impl Codegen {
                 let ty = self.type_of_expr(expr);
 
                 self.gen_print_value(expr, &ty);
-
-                if let Type::Array(_) = ty {
-                    if let Expr::Const {
-                        value: Value::Array(items),
-                    } = expr
-                    {
-                        let cleanup = 8 * (1 + items.len() as i64);
-                        self.emit(&format!("addq ${}, %rsp", cleanup));
-                    } else {
-                        self.emit("movq %r13, %rax");
-                        self.emit("incq %rax");
-                        self.emit("shlq $3, %rax");
-                        self.emit("addq %rax, %rsp");
-                    }
-                }
             }
             Stmt::Return { expr } => {
                 self.gen_expr(expr);
@@ -440,23 +460,7 @@ impl Codegen {
                 Value::Null => {
                     self.emit("leaq null(%rip), %rax");
                 }
-                Value::Array(items) => {
-                    let n = items.len() as i64;
-                    let total_bytes = 8 * (1 + n);
-
-                    self.emit(&format!("subq ${}, %rsp", total_bytes));
-                    self.emit(&format!("movq ${}, (%rsp)", n));
-
-                    for (i, item) in items.iter().enumerate() {
-                        self.gen_expr(&Expr::Const {
-                            value: item.clone(),
-                        });
-                        let off = 8 * ((i as i64) + 1);
-                        self.emit(&format!("movq %rax, {}(%rsp)", off));
-                    }
-
-                    self.emit("leaq 0(%rsp), %rax");
-                }
+                Value::Array(_) => {}
             },
             Expr::Var { name } => {
                 if let Some(offset) = self.var_offsets.get(name) {
@@ -550,15 +554,23 @@ impl Codegen {
             }
             Expr::Array { items } => {
                 let n = items.len() as i64;
-                let total = 8 * (1 + n);
-                self.emit(&format!("subq ${}, %rsp", total));
-                self.emit(&format!("movq ${}, (%rsp)", n));
+                let total_bytes = 8 * (1 + n);
+
+                self.emit(&format!("movq ${}, %rdi", total_bytes));
+                self.emit("call malloc");
+
+                self.emit("movq %rax, %r12");
+                self.emit(&format!("movq ${}, (%r12)", n));
+
                 for (i, item) in items.iter().enumerate() {
-                    self.gen_expr(item);
                     let off = 8 * (i as i64 + 1);
-                    self.emit(&format!("movq %rax, {}(%rsp)", off));
+                    self.emit("pushq %r12");
+                    self.gen_expr(item);
+                    self.emit("popq %r12");
+                    self.emit(&format!("movq %rax, {}(%r12)", off));
                 }
-                self.emit("leaq 0(%rsp), %rax");
+
+                self.emit("movq %r12, %rax");
             }
         }
     }
