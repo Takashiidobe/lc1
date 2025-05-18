@@ -57,7 +57,11 @@ impl Parser {
             Token::Print => self.parse_print(),
             Token::Return => self.parse_return(),
             Token::If => self.parse_if(),
-            other => panic!("Unexpected token in statement position: {:?}", other),
+            _ => {
+                let expr = self.parse_expr();
+                self.expect(&Token::Semi);
+                Stmt::Expr { expr }
+            }
         }
     }
 
@@ -186,7 +190,21 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> Expr {
-        self.parse_eq()
+        self.parse_assign()
+    }
+
+    fn parse_assign(&mut self) -> Expr {
+        let lhs = self.parse_eq();
+
+        if self.consume(&Token::Assign) {
+            let rhs = self.parse_assign();
+            Expr::Assign {
+                target: Box::new(lhs),
+                value: Box::new(rhs),
+            }
+        } else {
+            lhs
+        }
     }
 
     fn parse_eq(&mut self) -> Expr {

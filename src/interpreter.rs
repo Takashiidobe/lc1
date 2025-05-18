@@ -30,17 +30,7 @@ impl Default for Interpreter {
 impl Interpreter {
     pub fn run(&mut self, stmts: &[Stmt]) {
         for stmt in stmts {
-            if let Some(val) = self.exec(stmt) {
-                match val {
-                    Value::Int(i) => std::process::exit(i as i32),
-                    Value::Str(s) => {
-                        println!("{}", s);
-                        std::process::exit(0);
-                    }
-                    Value::Null => std::process::exit(0),
-                    Value::Array(_) => std::process::exit(0),
-                }
-            }
+            self.exec(stmt);
         }
     }
 
@@ -89,6 +79,7 @@ impl Interpreter {
 
                 None
             }
+            Stmt::Expr { expr } => Some(self.eval(expr)),
         }
     }
 
@@ -224,6 +215,37 @@ impl Interpreter {
                 }
                 vec[idx as usize].clone()
             }
+            Expr::Assign { target, value } => {
+                let rhs = self.eval(value);
+
+                let (root, idx_exprs) = collect_indices(target);
+                let var_name = if let Expr::Var { name } = root {
+                    name.clone()
+                } else {
+                    panic!("Can only assign into a variable’s array slot");
+                };
+
+                let idxs: Vec<usize> = idx_exprs
+                    .iter()
+                    .map(|e| {
+                        let v = self.eval(e).to_int();
+                        if v < 0 {
+                            panic!("Negative index {} on `{}`", v, var_name);
+                        }
+                        v as usize
+                    })
+                    .collect();
+
+                let entry = self
+                    .current_frame_mut()
+                    .vars
+                    .get_mut(&var_name)
+                    .unwrap_or_else(|| panic!("Undefined variable `{}`", var_name));
+
+                assign_into(entry, &idxs, rhs.clone(), &var_name);
+
+                rhs
+            }
         }
     }
 
@@ -242,5 +264,38 @@ impl Interpreter {
         }
         self.stack.pop();
         result
+    }
+}
+
+fn collect_indices(expr: &Expr) -> (&Expr, Vec<&Expr>) {
+    match expr {
+        Expr::Index { array, index } => {
+            let (root, mut rest) = collect_indices(array);
+            rest.push(&**index);
+            (root, rest)
+        }
+        other => (other, Vec::new()),
+    }
+}
+fn assign_into(val: &mut Value, idxs: &[usize], rhs: Value, root_name: &str) {
+    let vec = match val {
+        Value::Array(v) => v,
+        _ => panic!("Type error: `{}` is not an array", root_name),
+    };
+
+    let i = idxs[0];
+    if i >= vec.len() {
+        panic!(
+            "Index out of bounds: {} on array `{}` (len = {})",
+            i,
+            root_name,
+            vec.len()
+        );
+    }
+
+    if idxs.len() == 1 {
+        vec[i] = rhs;
+    } else {
+        assign_into(&mut vec[i], &idxs[1..], rhs, root_name);
     }
 }

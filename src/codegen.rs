@@ -444,6 +444,7 @@ impl Codegen {
                     self.emit(&format!("{}:", end_label));
                 }
             }
+            Stmt::Expr { expr } => self.gen_expr(expr),
         }
     }
 
@@ -589,6 +590,30 @@ impl Codegen {
 
                 self.emit("movq (%rax), %rax");
             }
+            Expr::Assign { target, value } => {
+                if let Expr::Index { array, index } = &**target {
+                    self.gen_expr(array);
+                    self.emit("movq %rax, %r12");
+
+                    self.gen_expr(index);
+                    self.emit("movq %rax, %r13");
+
+                    self.emit("cmpq $0, %r13");
+                    self.emit("jl .index_oob");
+
+                    self.emit("movq (%r12), %r14");
+                    self.emit("cmpq %r14, %r13");
+                    self.emit("jge .index_oob");
+
+                    self.gen_expr(value);
+
+                    self.emit("lea 8(%r12,%r13,8), %rdx");
+
+                    self.emit("movq %rax, (%rdx)");
+                } else {
+                    panic!("Assignment target must be an array index");
+                }
+            }
         }
     }
 
@@ -638,6 +663,7 @@ impl Codegen {
                         self.collect_string_literals(else_stmts);
                     }
                 }
+                Stmt::Expr { expr } => walk_expr(self, expr),
             }
         }
     }

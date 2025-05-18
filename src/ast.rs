@@ -72,6 +72,7 @@ pub enum Expr {
     Var { name: String },
     FnCall { name: String, args: Vec<Expr> },
     Index { array: Box<Expr>, index: Box<Expr> },
+    Assign { target: Box<Expr>, value: Box<Expr> },
 }
 
 impl Display for Expr {
@@ -99,6 +100,7 @@ impl Display for Expr {
                 write!(f, "]")
             }
             Expr::Index { array, index } => f.write_fmt(format_args!("{array}[{index}]")),
+            Expr::Assign { target, value } => f.write_fmt(format_args!("{target} = {value}")),
         }
     }
 }
@@ -125,5 +127,8 @@ pub enum Stmt {
         cond: Expr,
         then: Vec<Stmt>,
         else_branch: Option<Vec<Stmt>>,
+    },
+    Expr {
+        expr: Expr,
     },
 }
