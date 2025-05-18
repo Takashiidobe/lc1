@@ -89,7 +89,17 @@ impl Codegen {
                 Value::Int(_) => Type::Int,
                 Value::Str(_) => Type::Str,
                 Value::Null => Type::Null,
-                Value::Array(_) => Type::Array(Box::new(Type::Int)),
+                Value::Array(items) => {
+                    let ty = items
+                        .first()
+                        .map(|value| {
+                            self.type_of_expr(&Expr::Const {
+                                value: value.clone(),
+                            })
+                        })
+                        .unwrap_or(Type::Null);
+                    Type::Array(Box::new(ty))
+                }
             },
             Var { name } => self.lookup_var_type(name),
             FnCall { name, .. } => self
@@ -97,6 +107,13 @@ impl Codegen {
                 .get(name.as_str())
                 .unwrap_or_else(|| panic!("unknown fn `{}`", name))
                 .clone(),
+            Expr::Array { items } => {
+                let ty = items
+                    .first()
+                    .map(|i| self.type_of_expr(i))
+                    .unwrap_or(Type::Null);
+                Type::Array(Box::new(ty))
+            }
             _ => Type::Int,
         }
     }
@@ -139,8 +156,9 @@ impl Codegen {
         self.emit(".section .data");
         self.emit(r#"Larr_open:  .string "[""#);
         self.emit(r#"Larr_sep:   .string ", ""#);
-        self.emit(r#"Larr_close: .string "]\n"#);
-        self.emit("fmt: .string \"%ld\\n\"");
+        self.emit(r#"Larr_close: .string "]\n""#);
+        self.emit("fmt: .string \"%ld\"");
+        self.emit("printf_str: .string \"%s\"");
         self.emit("null: .string \"null\"");
 
         self.emit(".section .rodata");
@@ -179,46 +197,72 @@ impl Codegen {
         self.format_asm()
     }
 
-    fn gen_print_value(&mut self, expr: &Expr, ty: &Type) {
-        self.gen_expr(expr);
-
+    fn emit_print_reg(&mut self, ty: &Type) {
         match ty {
             Type::Int => {
                 self.emit("movq %rax, %rsi");
                 self.emit("leaq fmt(%rip), %rdi");
-                self.emit("xor %rax, %rax");
+                self.emit("xor  %rax, %rax");
                 self.emit("call printf");
             }
-
             Type::Str | Type::Null => {
-                self.emit("movq %rax, %rdi");
-                self.emit("call puts");
+                self.emit("movq %rax, %rsi");
+                self.emit("leaq printf_str(%rip), %rdi");
+                self.emit("xor  %rax, %rax");
+                self.emit("call printf");
             }
+            Type::Array(_) => {
+                self.emit("movq %rax, %r12");
+                self.emit("movq (%r12), %r13");
+                self.emit("xorq %r14, %r14");
+            }
+        }
+    }
 
+    fn gen_print_value(&mut self, expr: &Expr, ty: &Type) {
+        self.gen_expr(expr);
+
+        match ty {
             Type::Array(elem_ty) => {
-                self.emit("leaq Larr_open(%rip), %rdi");
-                self.emit("call puts");
+                self.emit("movq %rax, %r12");
+                self.emit("movq (%r12), %r13");
 
-                if let Expr::Const {
-                    value: Value::Array(items),
-                } = expr
-                {
-                    for (i, item_val) in items.iter().enumerate() {
-                        let item_expr = Expr::Const {
-                            value: item_val.clone(),
-                        };
-                        self.gen_print_value(&item_expr, elem_ty);
+                self.emit("xorq %r14, %r14");
 
-                        if i + 1 < items.len() {
-                            self.emit("leaq Larr_sep(%rip), %rdi");
-                            self.emit("call puts");
-                        }
-                    }
-                }
+                self.emit("xor  %rax, %rax");
+                self.emit("leaq Larr_open(%rip), %rsi");
+                self.emit("leaq printf_str(%rip), %rdi");
+                self.emit("call printf");
 
-                self.emit("leaq Larr_close(%rip), %rdi");
-                self.emit("call puts");
+                let loop_lbl = self.new_label("array_loop");
+                let no_sep_lbl = self.new_label("array_no_sep");
+                let end_lbl = self.new_label("array_end");
+
+                self.emit(&format!("{}:", loop_lbl));
+                self.emit("cmpq %r13, %r14");
+                self.emit(&format!("jge {}", end_lbl));
+
+                self.emit("cmpq $0, %r14");
+                self.emit(&format!("je {}", no_sep_lbl));
+                self.emit("xor  %rax, %rax");
+                self.emit("leaq Larr_sep(%rip), %rsi");
+                self.emit("leaq printf_str(%rip), %rdi");
+                self.emit("call printf");
+
+                self.emit(&format!("{}:", no_sep_lbl));
+                self.emit("movq 8(%r12,%r14,8), %rax");
+                self.emit_print_reg(elem_ty);
+
+                self.emit("incq %r14");
+                self.emit(&format!("jmp {}", loop_lbl));
+
+                self.emit(&format!("{}:", end_lbl));
+                self.emit("xor  %rax, %rax");
+                self.emit("leaq Larr_close(%rip), %rsi");
+                self.emit("leaq printf_str(%rip), %rdi");
+                self.emit("call printf");
             }
+            _ => self.emit_print_reg(ty),
         }
     }
 
@@ -234,22 +278,21 @@ impl Codegen {
             }
             Stmt::Print { expr } => {
                 let ty = self.type_of_expr(expr);
-                self.gen_expr(expr);
 
-                match ty {
-                    Type::Int => {
-                        self.emit("movq %rax, %rsi");
-                        self.emit("leaq fmt(%rip), %rdi");
-                        self.emit("xor %rax, %rax");
-                        self.emit("call printf");
-                    }
-                    Type::Str | Type::Null => {
-                        self.emit("movq %rax, %rdi");
-                        self.emit("call puts");
-                    }
-                    Type::Array(_) => {
-                        self.emit("movq %rax, %rdi");
-                        self.emit("call puts");
+                self.gen_print_value(expr, &ty);
+
+                if let Type::Array(_) = ty {
+                    if let Expr::Const {
+                        value: Value::Array(items),
+                    } = expr
+                    {
+                        let cleanup = 8 * (1 + items.len() as i64);
+                        self.emit(&format!("addq ${}, %rsp", cleanup));
+                    } else {
+                        self.emit("movq %r13, %rax");
+                        self.emit("incq %rax");
+                        self.emit("shlq $3, %rax");
+                        self.emit("addq %rax, %rsp");
                     }
                 }
             }
@@ -398,17 +441,21 @@ impl Codegen {
                     self.emit("leaq null(%rip), %rax");
                 }
                 Value::Array(items) => {
-                    let size = items.len() * 8;
-                    self.emit(&format!("subq ${}, %rsp", size));
+                    let n = items.len() as i64;
+                    let total_bytes = 8 * (1 + n);
 
-                    for (i, value) in items.iter().enumerate() {
+                    self.emit(&format!("subq ${}, %rsp", total_bytes));
+                    self.emit(&format!("movq ${}, (%rsp)", n));
+
+                    for (i, item) in items.iter().enumerate() {
                         self.gen_expr(&Expr::Const {
-                            value: value.clone(),
+                            value: item.clone(),
                         });
-                        self.emit(&format!("movq %rax, {}(%rsp)", i * 8));
+                        let off = 8 * ((i as i64) + 1);
+                        self.emit(&format!("movq %rax, {}(%rsp)", off));
                     }
 
-                    self.emit("movq %rsp, %rax");
+                    self.emit("leaq 0(%rsp), %rax");
                 }
             },
             Expr::Var { name } => {
@@ -502,10 +549,14 @@ impl Codegen {
                 self.emit("negq %rax");
             }
             Expr::Array { items } => {
-                let size = items.len() * 8;
-                self.emit(&format!("subq ${}, %rsp", size));
-                for (i, _) in items.iter().enumerate() {
-                    self.emit(&format!("movq %rax, {}(%rsp)", i * 8));
+                let n = items.len() as i64;
+                let total = 8 * (1 + n);
+                self.emit(&format!("subq ${}, %rsp", total));
+                self.emit(&format!("movq ${}, (%rsp)", n));
+                for (i, item) in items.iter().enumerate() {
+                    self.gen_expr(item);
+                    let off = 8 * (i as i64 + 1);
+                    self.emit(&format!("movq %rax, {}(%rsp)", off));
                 }
                 self.emit("leaq 0(%rsp), %rax");
             }
