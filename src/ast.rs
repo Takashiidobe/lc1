@@ -1,4 +1,7 @@
-use std::fmt::{self, Display};
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Display},
+};
 
 use crate::codegen::Type;
 
@@ -7,6 +10,7 @@ pub enum Value {
     Int(i64),
     Str(String),
     Array(Vec<Value>),
+    Struct(String, BTreeMap<String, Value>),
     Null,
 }
 
@@ -53,26 +57,78 @@ impl Display for Value {
                 }
                 write!(f, "]")
             }
+            Value::Struct(name, fields) => {
+                write!(f, "struct {name} {{")?;
+                for (i, (field_name, field_val)) in fields.iter().enumerate() {
+                    write!(f, "{field_name}: {field_val}")?;
+                    if i + 1 < fields.len() {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, "}}")
+            }
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub enum Expr {
-    Neg { expr: Box<Expr> },
-    Add { lhs: Box<Expr>, rhs: Box<Expr> },
-    Lt { lhs: Box<Expr>, rhs: Box<Expr> },
-    Le { lhs: Box<Expr>, rhs: Box<Expr> },
-    Gt { lhs: Box<Expr>, rhs: Box<Expr> },
-    Ge { lhs: Box<Expr>, rhs: Box<Expr> },
-    Eq { lhs: Box<Expr>, rhs: Box<Expr> },
-    Ne { lhs: Box<Expr>, rhs: Box<Expr> },
-    Array { items: Vec<Expr> },
-    Const { value: Value },
-    Var { name: String },
-    FnCall { name: String, args: Vec<Expr> },
-    Index { array: Box<Expr>, index: Box<Expr> },
-    Assign { target: Box<Expr>, value: Box<Expr> },
+    Neg {
+        expr: Box<Expr>,
+    },
+    Add {
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    Lt {
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    Le {
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    Gt {
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    Ge {
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    Eq {
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    Ne {
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    Array {
+        items: Vec<Expr>,
+    },
+    Const {
+        value: Value,
+    },
+    Var {
+        name: String,
+    },
+    FnCall {
+        name: String,
+        args: Vec<Expr>,
+    },
+    Index {
+        array: Box<Expr>,
+        index: Box<Expr>,
+    },
+    Assign {
+        target: Box<Expr>,
+        value: Box<Expr>,
+    },
+    Struct {
+        name: String,
+        fields: Vec<(String, Expr)>,
+    },
 }
 
 impl Display for Expr {
@@ -101,6 +157,17 @@ impl Display for Expr {
             }
             Expr::Index { array, index } => f.write_fmt(format_args!("{array}[{index}]")),
             Expr::Assign { target, value } => f.write_fmt(format_args!("{target} = {value}")),
+            Expr::Struct { name, fields } => {
+                write!(f, "struct {name} {{")?;
+                for (i, (name, expr)) in fields.iter().enumerate() {
+                    write!(f, "{name}: {expr}")?;
+                    if i + 1 < fields.len() {
+                        write!(f, ",")?;
+                        write!(f, "\n")?;
+                    }
+                }
+                write!(f, "}}")
+            }
         }
     }
 }
@@ -116,6 +183,10 @@ pub enum Stmt {
     VarDecl {
         name: String,
         value: Expr,
+    },
+    StructDecl {
+        name: String,
+        fields: Vec<(String, Type)>,
     },
     Print {
         expr: Expr,

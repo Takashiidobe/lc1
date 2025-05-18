@@ -8,6 +8,7 @@ pub enum Type {
     Str,
     Null,
     Array(Box<Type>),
+    Struct(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,6 +21,7 @@ pub struct Codegen {
     string_literals: HashMap<String, String>,
     fn_ret_types: HashMap<String, Type>,
     var_types: Vec<HashMap<String, Type>>,
+    structs: HashMap<String, usize>,
 }
 
 impl Default for Codegen {
@@ -33,6 +35,7 @@ impl Default for Codegen {
             string_literals: Default::default(),
             fn_ret_types: Default::default(),
             var_types: vec![Default::default()],
+            structs: Default::default(),
         }
     }
 }
@@ -100,6 +103,7 @@ impl Codegen {
                         .unwrap_or(Type::Null);
                     Type::Array(Box::new(ty))
                 }
+                Value::Struct(name, _) => Type::Struct(name.to_string()),
             },
             Var { name } => self.lookup_var_type(name),
             FnCall { name, .. } => self
@@ -216,6 +220,7 @@ impl Codegen {
                 self.emit("movq (%r12), %r13");
                 self.emit("xorq %r14, %r14");
             }
+            Type::Struct(_) => todo!(),
         }
     }
 
@@ -255,7 +260,6 @@ impl Codegen {
                 self.emit("xor  %rax, %rax");
                 self.emit("call printf");
             }
-
             Type::Str | Type::Null => {
                 self.emit("movq %rax, %rsi");
                 self.emit("leaq printf_str(%rip), %rdi");
@@ -273,6 +277,7 @@ impl Codegen {
                 self.emit("popq %r13");
                 self.emit("popq %r12");
             }
+            Type::Struct(_) => {}
         }
 
         self.emit("incq %r14");
@@ -445,6 +450,11 @@ impl Codegen {
                 }
             }
             Stmt::Expr { expr } => self.gen_expr(expr),
+            Stmt::StructDecl { name, fields } => {
+                if self.structs.insert(name.clone(), fields.len()).is_some() {
+                    panic!("Duplicate struct `{}`", name);
+                }
+            }
         }
     }
 
@@ -462,6 +472,7 @@ impl Codegen {
                     self.emit("leaq null(%rip), %rax");
                 }
                 Value::Array(_) => {}
+                Value::Struct(..) => {}
             },
             Expr::Var { name } => {
                 if let Some(offset) = self.var_offsets.get(name) {
@@ -614,6 +625,29 @@ impl Codegen {
                     panic!("Assignment target must be an array index");
                 }
             }
+            Expr::Struct { name, fields } => {
+                let n = *self
+                    .structs
+                    .get(name)
+                    .unwrap_or_else(|| panic!("Unknown struct `{}`", name))
+                    as i64;
+                let total_bytes = 8 * n;
+
+                self.emit(&format!("movq ${}, %rdi", total_bytes));
+                self.emit("call malloc");
+
+                self.emit("movq %rax, %r12");
+
+                for (i, (_field_name, expr)) in fields.iter().enumerate() {
+                    let off = 8 * (i as i64);
+                    self.emit("pushq %r12");
+                    self.gen_expr(expr); // result → %rax
+                    self.emit("popq %r12");
+                    self.emit(&format!("movq %rax, {}(%r12)", off));
+                }
+
+                self.emit("movq %r12, %rax");
+            }
         }
     }
 
@@ -664,6 +698,7 @@ impl Codegen {
                     }
                 }
                 Stmt::Expr { expr } => walk_expr(self, expr),
+                Stmt::StructDecl { .. } => {}
             }
         }
     }

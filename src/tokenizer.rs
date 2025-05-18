@@ -7,6 +7,7 @@ pub enum Token {
     Let,
     Return,
     Print,
+    Struct,
 
     // Identifiers and literals
     Ident(String),
@@ -222,6 +223,7 @@ impl Lexer<'_> {
                     "let" => Token::Let,
                     "return" => Token::Return,
                     "print" => Token::Print,
+                    "struct" => Token::Struct,
                     other => Token::Ident(other.to_string()),
                 }
             }

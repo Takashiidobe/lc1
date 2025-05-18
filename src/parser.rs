@@ -57,6 +57,7 @@ impl Parser {
             Token::Print => self.parse_print(),
             Token::Return => self.parse_return(),
             Token::If => self.parse_if(),
+            Token::Struct => self.parse_struct_decl(),
             _ => {
                 let expr = self.parse_expr();
                 self.expect(&Token::Semi);
@@ -74,7 +75,6 @@ impl Parser {
         };
         self.expect(&Token::LParen);
 
-        // parse ( name: Type, ... )
         let mut args = Vec::new();
         if !self.consume(&Token::RParen) {
             loop {
@@ -93,14 +93,12 @@ impl Parser {
             }
         }
 
-        // optional return arrow
         let return_type = if self.consume(&Token::Arrow) {
             self.parse_type()
         } else {
             Type::Null
         };
 
-        // body
         self.expect(&Token::LBrace);
         let mut body = Vec::new();
         while !self.consume(&Token::RBrace) {
@@ -150,14 +148,12 @@ impl Parser {
         let cond = self.parse_expr();
         self.expect(&Token::RParen);
 
-        // then‐block
         self.expect(&Token::LBrace);
         let mut then = Vec::new();
         while !self.consume(&Token::RBrace) {
             then.push(self.parse_stmt());
         }
 
-        // optional else
         let else_branch = if self.consume(&Token::Else) {
             self.expect(&Token::LBrace);
             let mut els = Vec::new();
@@ -174,6 +170,42 @@ impl Parser {
             then,
             else_branch,
         }
+    }
+
+    fn parse_struct_decl(&mut self) -> Stmt {
+        self.expect(&Token::Struct);
+
+        let next_token = self.next();
+
+        let name = if let Token::Ident(n) = next_token {
+            n
+        } else {
+            panic!("Expected identifier after `struct`, found {next_token:?}");
+        };
+
+        self.expect(&Token::LBrace);
+
+        let mut fields = vec![];
+        while !self.consume(&Token::RBrace) {
+            let field_name = if let Token::Ident(n) = self.next() {
+                n
+            } else {
+                panic!("Expected field name in struct, found {:?}", self.peek());
+            };
+
+            self.expect(&Token::Colon);
+            let ty = self.parse_type();
+            fields.push((field_name, ty));
+
+            if !self.consume(&Token::Comma) {
+                self.expect(&Token::RBrace);
+                break;
+            }
+        }
+
+        self.expect(&Token::Semi);
+
+        Stmt::StructDecl { name, fields }
     }
 
     fn parse_type(&mut self) -> Type {
@@ -307,6 +339,38 @@ impl Parser {
 
     fn process_primary(&mut self) -> Expr {
         match self.peek().clone() {
+            Token::Struct => {
+                self.next();
+                let name = if let Token::Ident(n) = self.next() {
+                    n
+                } else {
+                    panic!("Expected struct name after `struct`");
+                };
+                self.expect(&Token::LBrace);
+
+                let mut fields = Vec::new();
+                while !self.consume(&Token::RBrace) {
+                    let field_name = if let Token::Ident(n) = self.next() {
+                        n
+                    } else {
+                        panic!(
+                            "Expected field name in struct literal, found {:?}",
+                            self.peek()
+                        );
+                    };
+
+                    self.expect(&Token::Colon);
+                    let val = self.parse_expr();
+                    fields.push((field_name, val));
+
+                    if !self.consume(&Token::Comma) {
+                        self.expect(&Token::RBrace);
+                        break;
+                    }
+                }
+
+                Expr::Struct { name, fields }
+            }
             Token::LBracket => {
                 self.next();
                 let mut items = vec![];

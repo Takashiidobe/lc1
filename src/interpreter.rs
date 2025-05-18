@@ -3,7 +3,7 @@ use crate::{
     codegen::Type,
 };
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     io::{self, Write as _},
 };
 
@@ -16,6 +16,7 @@ pub struct StackFrame {
 pub struct Interpreter {
     fns: HashMap<String, (Vec<(String, Type)>, Vec<Stmt>)>,
     stack: Vec<StackFrame>,
+    structs: HashMap<String, Vec<String>>,
 }
 
 impl Default for Interpreter {
@@ -23,6 +24,7 @@ impl Default for Interpreter {
         Self {
             fns: Default::default(),
             stack: vec![StackFrame::default()],
+            structs: Default::default(),
         }
     }
 }
@@ -47,6 +49,15 @@ impl Interpreter {
             Stmt::VarDecl { name, value } => {
                 let v = self.eval(value);
                 self.current_frame_mut().vars.insert(name.clone(), v);
+                None
+            }
+            Stmt::StructDecl { name, fields } => {
+                if let Some(_) = self.structs.insert(
+                    name.clone(),
+                    fields.iter().map(|(f, _)| f.clone()).collect(),
+                ) {
+                    panic!("Duplicate struct `{name}`");
+                }
                 None
             }
             Stmt::Print { expr } => {
@@ -96,7 +107,10 @@ impl Interpreter {
 
                 None
             }
-            Stmt::Expr { expr } => Some(self.eval(expr)),
+            Stmt::Expr { expr } => {
+                self.eval(expr);
+                None
+            }
         }
     }
 
@@ -262,6 +276,38 @@ impl Interpreter {
                 assign_into(entry, &idxs, rhs.clone(), &var_name);
 
                 rhs
+            }
+            Expr::Struct { name, fields } => {
+                let def_fields = self
+                    .structs
+                    .get(name)
+                    .unwrap_or_else(|| panic!("Unknown struct `{}`", name));
+
+                if def_fields.len() != fields.len() {
+                    panic!(
+                        "Struct `{}` expects {} fields, got {}",
+                        name,
+                        def_fields.len(),
+                        fields.len()
+                    );
+                }
+
+                for (expected, (got, _)) in def_fields.iter().zip(fields.iter()) {
+                    if expected != got {
+                        panic!(
+                            "Field mismatch in `{}`: expected `{}`, found `{}`",
+                            name, expected, got
+                        );
+                    }
+                }
+
+                let mut map = BTreeMap::new();
+                for (field_name, field_expr) in fields {
+                    let v = self.eval(field_expr);
+                    map.insert(field_name.clone(), v);
+                }
+
+                Value::Struct(name.clone(), map)
             }
         }
     }
