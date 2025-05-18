@@ -51,12 +51,24 @@ impl Interpreter {
             }
             Stmt::Print { expr } => {
                 let v = self.eval(expr);
-                // handle newlines
-                if v == Value::Str("\n".to_string()) {
-                    println!();
-                } else {
-                    print!("{}", v);
-                    io::stdout().flush().unwrap();
+                // handle control chars
+                match v {
+                    Value::Str(s) => {
+                        for c in s.chars() {
+                            if c == '\n' {
+                                println!();
+                            }
+                            if c == '\t' {
+                                print!("\t");
+                            } else {
+                                print!("{c}");
+                            }
+                        }
+                    }
+                    _ => {
+                        print!("{}", v);
+                        io::stdout().flush().unwrap();
+                    }
                 }
                 None
             }
