@@ -249,33 +249,74 @@ impl Interpreter {
             Expr::Assign { target, value } => {
                 let rhs = self.eval(value);
 
-                let (root, idx_exprs) = collect_indices(target);
-                let var_name = if let Expr::Var { name } = root {
-                    name.clone()
-                } else {
-                    panic!("Can only assign into a variable’s array slot");
-                };
+                match &**target {
+                    Expr::Index { .. } => {
+                        let (root, idx_exprs) = collect_indices(target);
+                        let var_name = if let Expr::Var { name } = root {
+                            name.clone()
+                        } else {
+                            panic!("Can only assign into a variable’s array slot");
+                        };
 
-                let idxs: Vec<usize> = idx_exprs
-                    .iter()
-                    .map(|e| {
-                        let v = self.eval(e).to_int();
-                        if v < 0 {
-                            panic!("Negative index {} on `{}`", v, var_name);
+                        let idxs: Vec<usize> = idx_exprs
+                            .iter()
+                            .map(|e| {
+                                let v = self.eval(e).to_int();
+                                if v < 0 {
+                                    panic!("Negative index {} on `{}`", v, var_name);
+                                }
+                                v as usize
+                            })
+                            .collect();
+
+                        let entry = self
+                            .current_frame_mut()
+                            .vars
+                            .get_mut(&var_name)
+                            .unwrap_or_else(|| panic!("Undefined variable `{}`", var_name));
+
+                        assign_into(entry, &idxs, rhs.clone(), &var_name);
+
+                        rhs
+                    }
+                    Expr::Field { object, name } => {
+                        let var_name = if let Expr::Var { name } = &**object {
+                            name
+                        } else {
+                            panic!(
+                                "Can only assign to a named struct instance: tried `{object:?}`"
+                            );
+                        };
+
+                        let entry = self
+                            .current_frame_mut()
+                            .vars
+                            .get_mut(var_name)
+                            .unwrap_or_else(|| panic!("Undefined variable `{}`", var_name));
+
+                        let map = if let Value::Struct(_, map) = entry {
+                            map
+                        } else {
+                            panic!("Type error: `{}` is not a struct", var_name);
+                        };
+
+                        if !map.contains_key(name) {
+                            panic!("Unknown field `{}` on struct `{}`", name, var_name);
                         }
-                        v as usize
-                    })
-                    .collect();
+                        map.insert(name.clone(), rhs.clone());
 
-                let entry = self
-                    .current_frame_mut()
-                    .vars
-                    .get_mut(&var_name)
-                    .unwrap_or_else(|| panic!("Undefined variable `{}`", var_name));
-
-                assign_into(entry, &idxs, rhs.clone(), &var_name);
-
-                rhs
+                        rhs
+                    }
+                    Expr::Var { name } => {
+                        self.current_frame_mut()
+                            .vars
+                            .insert(name.clone(), rhs.clone());
+                        rhs
+                    }
+                    other => {
+                        panic!("Invalid assignment target: {:?}", other);
+                    }
+                }
             }
             Expr::Struct { name, fields } => {
                 let def_fields = self
@@ -309,7 +350,7 @@ impl Interpreter {
 
                 Value::Struct(name.clone(), map)
             }
-            Expr::StructAccess { object, name } => {
+            Expr::Field { object, name } => {
                 let base = self.eval(object);
                 match base {
                     Value::Struct(struct_name, map) => map

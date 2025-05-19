@@ -335,7 +335,7 @@ impl Parser {
                 } else {
                     panic!("Expected field name after `.`, got {:?}", self.peek());
                 };
-                expr = Expr::StructAccess {
+                expr = Expr::Field {
                     object: Box::new(expr),
                     name: field_name,
                 };

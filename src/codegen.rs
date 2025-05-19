@@ -121,12 +121,12 @@ impl Codegen {
                 Type::Array(Box::new(ty))
             }
             Expr::Struct { name, .. } => Type::Struct(name.clone()),
-            Expr::StructAccess { object, name } => {
+            Expr::Field { object, name } => {
                 let obj_ty = self.type_of_expr(object);
                 let struct_name = if let Type::Struct(s) = obj_ty {
                     s
                 } else {
-                    panic!("…");
+                    panic!("");
                 };
 
                 let fields = self.struct_defs.get(&struct_name).expect("unknown struct");
@@ -654,8 +654,31 @@ impl Codegen {
                     self.emit("lea 8(%r12,%r13,8), %rdx");
 
                     self.emit("movq %rax, (%rdx)");
+                } else if let Expr::Field { object, name } = &**target {
+                    self.gen_expr(object);
+                    self.emit("movq %rax, %r12");
+
+                    self.gen_expr(value);
+
+                    let obj_ty = self.type_of_expr(object);
+                    let struct_name = if let Type::Struct(s) = obj_ty {
+                        s
+                    } else {
+                        panic!("");
+                    };
+
+                    let fields = self
+                        .struct_defs
+                        .get(&struct_name)
+                        .unwrap_or_else(|| panic!("Unknown struct `{}`", struct_name));
+                    let idx = fields.iter().position(|f| f.0 == *name).unwrap_or_else(|| {
+                        panic!("Struct `{}` has no field `{}`", struct_name, name)
+                    });
+                    let offset = 8 * idx;
+
+                    self.emit(&format!("movq %rax, {}(%r12)", offset));
                 } else {
-                    panic!("Assignment target must be an array index");
+                    panic!("Assignment target must be a struct field");
                 }
             }
             Expr::Struct { fields, .. } => {
@@ -678,7 +701,7 @@ impl Codegen {
 
                 self.emit("movq %r12, %rax");
             }
-            Expr::StructAccess { object, name } => {
+            Expr::Field { object, name } => {
                 self.gen_expr(object);
                 self.emit("movq %rax, %r12");
                 let struct_name = match &**object {
@@ -719,7 +742,14 @@ impl Codegen {
                         cg.string_literals.insert(s.clone(), lbl);
                     }
                 }
-                Expr::Add { lhs, rhs } | Expr::Lt { lhs, rhs } => {
+                Expr::Const { .. } => {}
+                Expr::Add { lhs, rhs }
+                | Expr::Lt { lhs, rhs }
+                | Expr::Le { lhs, rhs }
+                | Expr::Gt { lhs, rhs }
+                | Expr::Ge { lhs, rhs }
+                | Expr::Eq { lhs, rhs }
+                | Expr::Ne { lhs, rhs } => {
                     walk_expr(cg, lhs);
                     walk_expr(cg, rhs);
                 }
@@ -733,7 +763,15 @@ impl Codegen {
                         walk_expr(cg, field_val);
                     }
                 }
-                _ => {}
+                Expr::Array { items } => {
+                    for item in items {
+                        walk_expr(cg, item);
+                    }
+                }
+                Expr::Assign { value, .. } => {
+                    walk_expr(cg, value);
+                }
+                Expr::Field { .. } | Expr::Index { .. } | Expr::Neg { .. } | Expr::Var { .. } => {}
             }
         }
 
