@@ -118,6 +118,7 @@ impl Codegen {
                     .unwrap_or(Type::Null);
                 Type::Array(Box::new(ty))
             }
+            Expr::Struct { name, .. } => Type::Struct(name.clone()),
             _ => Type::Int,
         }
     }
@@ -166,6 +167,9 @@ impl Codegen {
         self.emit("null: .string \"null\"");
 
         self.emit(".section .rodata");
+        for stmt in stmts {
+            self.emit_struct_printer(stmt);
+        }
         self.emit_oob_handler();
         let literals = self.string_literals.clone();
         for (s, label) in &literals {
@@ -220,7 +224,10 @@ impl Codegen {
                 self.emit("movq (%r12), %r13");
                 self.emit("xorq %r14, %r14");
             }
-            Type::Struct(_) => todo!(),
+            Type::Struct(name) => {
+                self.emit("movq %rax, %rdi");
+                self.emit(&format!("call print_{}", name));
+            }
         }
     }
 
@@ -288,20 +295,16 @@ impl Codegen {
         self.emit("leaq Larr_close(%rip), %rsi");
         self.emit("leaq printf_str(%rip), %rdi");
         self.emit("call printf");
+
+        self.emit("movq %r12, %rdi");
+        self.emit("call free");
     }
 
     fn gen_print_value(&mut self, expr: &Expr, ty: &Type) {
         self.gen_expr(expr);
 
         match ty {
-            Type::Array(elem_ty) => {
-                self.emit_print_array(elem_ty);
-
-                if let Type::Array(_) = ty {
-                    self.emit("movq %r12, %rdi");
-                    self.emit("call free");
-                }
-            }
+            Type::Array(elem_ty) => self.emit_print_array(elem_ty),
             _ => self.emit_print_reg(ty),
         }
     }
@@ -731,8 +734,51 @@ impl Codegen {
         self.emit("mov %r12, %rsi");
 
         self.emit("xor %rax, %rax");
-        self.emit("call printf@PLT");
-        self.emit("call exit@PLT");
+        self.emit("call printf");
+        self.emit("call exit");
         self.emit("ud2");
+    }
+
+    fn emit_struct_printer(&mut self, stmt: &Stmt) {
+        if let Stmt::StructDecl { name, fields } = stmt {
+            let mut fmt = format!("{} {{ ", name);
+            for (i, (f, ty)) in fields.iter().enumerate() {
+                let spec = match ty {
+                    Type::Int => "%ld",
+                    Type::Str => "%s",
+                    other => panic!("No printf specifier for type {:?}", other),
+                };
+                fmt.push_str(&format!("{}: {}", f, spec));
+                if i + 1 < fields.len() {
+                    fmt.push_str(", ");
+                }
+            }
+            fmt.push_str(" }");
+
+            let label = format!(".L.{}_fmt", name);
+            self.emit(&format!("{}:", label));
+            self.emit(&format!(".string \"{}\"", fmt));
+
+            let fn_name = format!("print_{}", name);
+            self.emit(".text");
+            self.emit(&format!(".globl {}", fn_name));
+            self.emit(&format!(".type {}, @function", fn_name));
+            self.emit(&format!("{}:", fn_name));
+
+            let regs = ["%rsi", "%rdx", "%rcx", "%r8", "%r9"];
+            for (i, _) in fields.iter().enumerate() {
+                let offset = 8 * (i as i64);
+                if i < regs.len() {
+                    self.emit(&format!("movq {}(%rdi), {}", offset, regs[i]));
+                } else {
+                    todo!()
+                }
+            }
+
+            self.emit(&format!("lea {}(%rip), %rdi", label));
+            self.emit("xor %rax, %rax");
+            self.emit("call printf");
+            self.emit("ret");
+        }
     }
 }
