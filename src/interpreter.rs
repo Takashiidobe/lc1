@@ -309,6 +309,21 @@ impl Interpreter {
 
                 Value::Struct(name.clone(), map)
             }
+            Expr::StructAccess { object, name } => {
+                let base = self.eval(object);
+                match base {
+                    Value::Struct(struct_name, map) => map
+                        .get(name)
+                        .unwrap_or_else(|| {
+                            panic!("Unknown field `{}` on struct `{}`", name, struct_name)
+                        })
+                        .clone(),
+                    other => panic!(
+                        "Type error: tried to access field `{}` on non-struct {:?}",
+                        name, other
+                    ),
+                }
+            }
         }
     }
 

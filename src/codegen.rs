@@ -21,7 +21,8 @@ pub struct Codegen {
     string_literals: HashMap<String, String>,
     fn_ret_types: HashMap<String, Type>,
     var_types: Vec<HashMap<String, Type>>,
-    structs: HashMap<String, usize>,
+    structs: HashMap<String, HashMap<String, usize>>,
+    struct_defs: HashMap<String, Vec<(String, Type)>>,
 }
 
 impl Default for Codegen {
@@ -34,6 +35,7 @@ impl Default for Codegen {
             max_offset: Default::default(),
             string_literals: Default::default(),
             fn_ret_types: Default::default(),
+            struct_defs: Default::default(),
             var_types: vec![Default::default()],
             structs: Default::default(),
         }
@@ -119,7 +121,31 @@ impl Codegen {
                 Type::Array(Box::new(ty))
             }
             Expr::Struct { name, .. } => Type::Struct(name.clone()),
-            _ => Type::Int,
+            Expr::StructAccess { object, name } => {
+                let obj_ty = self.type_of_expr(object);
+                let struct_name = if let Type::Struct(s) = obj_ty {
+                    s
+                } else {
+                    panic!("…");
+                };
+
+                let fields = self.struct_defs.get(&struct_name).expect("unknown struct");
+                let (_, ty) = fields
+                    .iter()
+                    .find(|(n, _)| n == name)
+                    .expect("no such field");
+                ty.clone()
+            }
+            Expr::Neg { .. }
+            | Expr::Add { .. }
+            | Expr::Lt { .. }
+            | Expr::Le { .. }
+            | Expr::Gt { .. }
+            | Expr::Ge { .. }
+            | Expr::Eq { .. }
+            | Expr::Ne { .. } => Type::Int,
+            Expr::Index { array, .. } => self.type_of_expr(array),
+            Expr::Assign { target, .. } => self.type_of_expr(target),
         }
     }
 
@@ -454,9 +480,13 @@ impl Codegen {
             }
             Stmt::Expr { expr } => self.gen_expr(expr),
             Stmt::StructDecl { name, fields } => {
-                if self.structs.insert(name.clone(), fields.len()).is_some() {
-                    panic!("Duplicate struct `{}`", name);
+                self.struct_defs.insert(name.clone(), fields.clone());
+
+                let mut offsets = HashMap::new();
+                for (idx, (field_name, _ty)) in fields.iter().enumerate() {
+                    offsets.insert(field_name.clone(), idx);
                 }
+                self.structs.insert(name.clone(), offsets);
             }
         }
     }
@@ -628,12 +658,9 @@ impl Codegen {
                     panic!("Assignment target must be an array index");
                 }
             }
-            Expr::Struct { name, fields } => {
-                let n = *self
-                    .structs
-                    .get(name)
-                    .unwrap_or_else(|| panic!("Unknown struct `{}`", name))
-                    as i64;
+            Expr::Struct { fields, .. } => {
+                let n = fields.iter().len();
+
                 let total_bytes = 8 * n;
 
                 self.emit(&format!("movq ${}, %rdi", total_bytes));
@@ -644,12 +671,39 @@ impl Codegen {
                 for (i, (_field_name, expr)) in fields.iter().enumerate() {
                     let off = 8 * (i as i64);
                     self.emit("pushq %r12");
-                    self.gen_expr(expr); // result → %rax
+                    self.gen_expr(expr);
                     self.emit("popq %r12");
                     self.emit(&format!("movq %rax, {}(%r12)", off));
                 }
 
                 self.emit("movq %r12, %rax");
+            }
+            Expr::StructAccess { object, name } => {
+                self.gen_expr(object);
+                self.emit("movq %rax, %r12");
+                let struct_name = match &**object {
+                    Expr::Struct { name, .. } => name.clone(),
+                    Expr::Var { name } => {
+                        let res = self.lookup_var_type(name);
+                        match res {
+                            Type::Struct(s) => s.clone(),
+                            _ => panic!("`{}` is not a struct variable", name),
+                        }
+                    }
+                    _ => panic!("Calling Struct Access operator on non-struct {object}"),
+                };
+
+                let fmap = self
+                    .structs
+                    .get(&struct_name)
+                    .unwrap_or_else(|| panic!("Unknown struct `{}`", struct_name));
+
+                let idx = *fmap
+                    .get(name)
+                    .unwrap_or_else(|| panic!("Struct `{}` has no field `{}`", struct_name, name));
+                let byte_offset = 8 * (idx as i64);
+
+                self.emit(&format!("movq {}(%r12), %rax", byte_offset));
             }
         }
     }
@@ -672,6 +726,11 @@ impl Codegen {
                 Expr::FnCall { args, .. } => {
                     for arg in args {
                         walk_expr(cg, arg);
+                    }
+                }
+                Expr::Struct { fields, .. } => {
+                    for (_, field_val) in fields {
+                        walk_expr(cg, field_val);
                     }
                 }
                 _ => {}
@@ -701,7 +760,14 @@ impl Codegen {
                     }
                 }
                 Stmt::Expr { expr } => walk_expr(self, expr),
-                Stmt::StructDecl { .. } => {}
+                Stmt::StructDecl { fields, .. } => {
+                    for (field, field_type) in fields {
+                        if *field_type == Type::Str {
+                            let label = self.new_label("str");
+                            self.string_literals.insert(field.to_string(), label);
+                        }
+                    }
+                }
             }
         }
     }

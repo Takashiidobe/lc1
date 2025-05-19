@@ -321,13 +321,27 @@ impl Parser {
     fn parse_postfix(&mut self) -> Expr {
         let mut expr = self.parse_primary();
 
-        while self.consume(&Token::LBracket) {
-            let index_expr = self.parse_expr();
-            self.expect(&Token::RBracket);
-            expr = Expr::Index {
-                array: Box::new(expr),
-                index: Box::new(index_expr),
-            };
+        loop {
+            if self.consume(&Token::LBracket) {
+                let index_expr = self.parse_expr();
+                self.expect(&Token::RBracket);
+                expr = Expr::Index {
+                    array: Box::new(expr),
+                    index: Box::new(index_expr),
+                };
+            } else if self.consume(&Token::Dot) {
+                let field_name = if let Token::Ident(n) = self.next() {
+                    n
+                } else {
+                    panic!("Expected field name after `.`, got {:?}", self.peek());
+                };
+                expr = Expr::StructAccess {
+                    object: Box::new(expr),
+                    name: field_name,
+                };
+            } else {
+                break;
+            }
         }
 
         expr

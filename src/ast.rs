@@ -129,6 +129,10 @@ pub enum Expr {
         name: String,
         fields: Vec<(String, Expr)>,
     },
+    StructAccess {
+        object: Box<Expr>,
+        name: String,
+    },
 }
 
 impl Display for Expr {
@@ -168,6 +172,7 @@ impl Display for Expr {
                 }
                 write!(f, "}}")
             }
+            Expr::StructAccess { object, name } => f.write_fmt(format_args!("{object}.{name}")),
         }
     }
 }

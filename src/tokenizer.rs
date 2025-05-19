@@ -40,6 +40,7 @@ pub enum Token {
     Comma,
     Colon,
     Semi,
+    Dot,
 
     Eof,
 }
@@ -205,6 +206,10 @@ impl Lexer<'_> {
             Some(';') => {
                 self.read_char();
                 Token::Semi
+            }
+            Some('.') => {
+                self.read_char();
+                Token::Dot
             }
             Some('"') => {
                 let lit = self.read_string();
