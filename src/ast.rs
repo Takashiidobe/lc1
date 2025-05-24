@@ -89,6 +89,18 @@ pub enum Expr {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
     },
+    Sub {
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    Mul {
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    Div {
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
     Lt {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
@@ -149,6 +161,9 @@ impl Display for Expr {
         match self {
             Expr::Neg { expr } => f.write_fmt(format_args!("-{expr}")),
             Expr::Add { lhs, rhs } => f.write_fmt(format_args!("{lhs} + {rhs}")),
+            Expr::Sub { lhs, rhs } => f.write_fmt(format_args!("{lhs} - {rhs}")),
+            Expr::Mul { lhs, rhs } => f.write_fmt(format_args!("{lhs} * {rhs}")),
+            Expr::Div { lhs, rhs } => f.write_fmt(format_args!("{lhs} / {rhs}")),
             Expr::Lt { lhs, rhs } => f.write_fmt(format_args!("{lhs} < {rhs}")),
             Expr::Le { lhs, rhs } => f.write_fmt(format_args!("{lhs} <= {rhs}")),
             Expr::Gt { lhs, rhs } => f.write_fmt(format_args!("{lhs} > {rhs}")),

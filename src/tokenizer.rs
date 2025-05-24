@@ -18,6 +18,8 @@ pub enum Token {
     // Arithmetic
     Plus,
     Minus,
+    Star,
+    Slash,
 
     // Operators
     Assign,
@@ -163,6 +165,14 @@ impl Lexer<'_> {
             Some('-') => {
                 self.read_char();
                 Token::Minus
+            }
+            Some('*') => {
+                self.read_char();
+                Token::Star
+            }
+            Some('/') => {
+                self.read_char();
+                Token::Slash
             }
             Some('<') => {
                 self.read_char();

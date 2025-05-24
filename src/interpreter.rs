@@ -153,6 +153,30 @@ impl Interpreter {
                     _ => panic!("Addition requires two ints"),
                 }
             }
+            Expr::Sub { lhs, rhs } => {
+                let l = self.eval(lhs);
+                let r = self.eval(rhs);
+                match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Value::Int(a - b),
+                    _ => panic!("Addition requires two ints"),
+                }
+            }
+            Expr::Mul { lhs, rhs } => {
+                let l = self.eval(lhs);
+                let r = self.eval(rhs);
+                match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Value::Int(a * b),
+                    _ => panic!("Addition requires two ints"),
+                }
+            }
+            Expr::Div { lhs, rhs } => {
+                let l = self.eval(lhs);
+                let r = self.eval(rhs);
+                match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Value::Int(a / b),
+                    _ => panic!("Addition requires two ints"),
+                }
+            }
             Expr::Lt { lhs, rhs } => {
                 let l = self.eval(lhs);
                 let r = self.eval(rhs);

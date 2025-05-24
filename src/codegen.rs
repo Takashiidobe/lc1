@@ -88,9 +88,8 @@ impl Codegen {
     }
 
     fn type_of_expr(&self, expr: &Expr) -> Type {
-        use Expr::*;
         match expr {
-            Const { value } => match value {
+            Expr::Const { value } => match value {
                 Value::Int(_) => Type::Int,
                 Value::Str(_) => Type::Str,
                 Value::Null => Type::Null,
@@ -107,8 +106,8 @@ impl Codegen {
                 }
                 Value::Struct(name, _) => Type::Struct(name.to_string()),
             },
-            Var { name } => self.lookup_var_type(name),
-            FnCall { name, .. } => self
+            Expr::Var { name } => self.lookup_var_type(name),
+            Expr::FnCall { name, .. } => self
                 .fn_ret_types
                 .get(name.as_str())
                 .unwrap_or_else(|| panic!("unknown fn `{}`", name))
@@ -143,7 +142,10 @@ impl Codegen {
             | Expr::Gt { .. }
             | Expr::Ge { .. }
             | Expr::Eq { .. }
-            | Expr::Ne { .. } => Type::Int,
+            | Expr::Ne { .. }
+            | Expr::Sub { .. }
+            | Expr::Mul { .. }
+            | Expr::Div { .. } => Type::Int,
             Expr::Index { array, .. } => self.type_of_expr(array),
             Expr::Assign { target, .. } => self.type_of_expr(target),
         }
@@ -561,55 +563,78 @@ impl Codegen {
                 self.emit("popq %rbx");
                 self.emit("addq %rbx, %rax");
             }
-            Expr::Lt { lhs, rhs } => {
-                self.gen_expr(lhs);
-                self.emit("pushq %rax");
+
+            Expr::Sub { lhs, rhs } => {
                 self.gen_expr(rhs);
+                self.emit("pushq %rax");
+                self.gen_expr(lhs);
+                self.emit("popq %rbx");
+                self.emit("subq %rbx, %rax");
+            }
+            Expr::Mul { lhs, rhs } => {
+                self.gen_expr(rhs);
+                self.emit("pushq %rax");
+                self.gen_expr(lhs);
+                self.emit("popq %rbx");
+                self.emit("subq %rbx, %rax");
+            }
+            Expr::Div { lhs, rhs } => {
+                self.gen_expr(rhs);
+                self.emit("pushq %rax");
+                self.gen_expr(lhs);
+                self.emit("popq %rbx");
+                self.emit("cqo");
+                self.emit("idivq %rdi, %rax");
+            }
+            Expr::Lt { lhs, rhs } => {
+                self.gen_expr(rhs);
+                self.emit("pushq %rax");
+                self.gen_expr(lhs);
                 self.emit("popq %rbx");
                 self.emit("cmpq %rax, %rbx");
                 self.emit("setl %al");
                 self.emit("movzbq %al, %rax");
             }
             Expr::Le { lhs, rhs } => {
-                self.gen_expr(lhs);
-                self.emit("pushq %rax");
                 self.gen_expr(rhs);
+                self.emit("pushq %rax");
+                self.gen_expr(lhs);
                 self.emit("popq %rbx");
                 self.emit("cmpq %rax, %rbx");
                 self.emit("setle %al");
                 self.emit("movzbq %al, %rax");
             }
             Expr::Gt { lhs, rhs } => {
-                self.gen_expr(lhs);
-                self.emit("pushq %rax");
                 self.gen_expr(rhs);
+                self.emit("pushq %rax");
+                self.gen_expr(lhs);
                 self.emit("popq %rbx");
                 self.emit("cmpq %rax, %rbx");
                 self.emit("setg %al");
                 self.emit("movzbq %al, %rax");
             }
             Expr::Ge { lhs, rhs } => {
-                self.gen_expr(lhs);
-                self.emit("pushq %rax");
                 self.gen_expr(rhs);
+                self.emit("pushq %rax");
+                self.gen_expr(lhs);
                 self.emit("popq %rbx");
                 self.emit("cmpq %rax, %rbx");
                 self.emit("setge %al");
                 self.emit("movzbq %al, %rax");
             }
             Expr::Eq { lhs, rhs } => {
-                self.gen_expr(lhs);
-                self.emit("pushq %rax");
                 self.gen_expr(rhs);
+                self.emit("pushq %rax");
+                self.gen_expr(lhs);
                 self.emit("popq %rbx");
                 self.emit("cmpq %rax, %rbx");
                 self.emit("sete %al");
                 self.emit("movzbq %al, %rax");
             }
             Expr::Ne { lhs, rhs } => {
-                self.gen_expr(lhs);
-                self.emit("pushq %rax");
                 self.gen_expr(rhs);
+                self.emit("pushq %rax");
+                self.gen_expr(lhs);
                 self.emit("popq %rbx");
                 self.emit("cmpq %rax, %rbx");
                 self.emit("setne %al");
@@ -790,6 +815,9 @@ impl Codegen {
                 }
                 Expr::Const { .. } => {}
                 Expr::Add { lhs, rhs }
+                | Expr::Sub { lhs, rhs }
+                | Expr::Mul { lhs, rhs }
+                | Expr::Div { lhs, rhs }
                 | Expr::Lt { lhs, rhs }
                 | Expr::Le { lhs, rhs }
                 | Expr::Gt { lhs, rhs }

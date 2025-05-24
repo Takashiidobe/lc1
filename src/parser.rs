@@ -341,13 +341,45 @@ impl Parser {
     }
 
     fn parse_add(&mut self) -> Expr {
+        let mut left = self.parse_mul();
+        loop {
+            if self.consume(&Token::Plus) {
+                let right = self.parse_mul();
+                left = Expr::Add {
+                    lhs: Box::new(left),
+                    rhs: Box::new(right),
+                };
+            } else if self.consume(&Token::Minus) {
+                let right = self.parse_mul();
+                left = Expr::Sub {
+                    lhs: Box::new(left),
+                    rhs: Box::new(right),
+                };
+            } else {
+                break;
+            }
+        }
+        left
+    }
+
+    fn parse_mul(&mut self) -> Expr {
         let mut left = self.parse_unary();
-        while self.consume(&Token::Plus) {
-            let right = self.parse_unary();
-            left = Expr::Add {
-                lhs: Box::new(left),
-                rhs: Box::new(right),
-            };
+        loop {
+            if self.consume(&Token::Star) {
+                let right = self.parse_unary();
+                left = Expr::Mul {
+                    lhs: Box::new(left),
+                    rhs: Box::new(right),
+                };
+            } else if self.consume(&Token::Slash) {
+                let right = self.parse_unary();
+                left = Expr::Div {
+                    lhs: Box::new(left),
+                    rhs: Box::new(right),
+                };
+            } else {
+                break;
+            }
         }
         left
     }
