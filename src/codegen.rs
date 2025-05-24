@@ -267,22 +267,22 @@ impl Codegen {
         self.emit("leaq printf_str(%rip), %rdi");
         self.emit("call printf");
 
-        let loop_lbl = self.new_label("array_loop");
-        let no_sep_lbl = self.new_label("array_no_sep");
-        let end_lbl = self.new_label("array_end");
+        let loop_label = self.new_label("array_loop");
+        let no_sep_label = self.new_label("array_no_sep");
+        let end_label = self.new_label("array_end");
 
-        self.emit(&format!("{}:", loop_lbl));
+        self.emit(&format!("{}:", loop_label));
         self.emit("cmpq %r13, %r14");
-        self.emit(&format!("jge {}", end_lbl));
+        self.emit(&format!("jge {}", end_label));
 
         self.emit("cmpq $0, %r14");
-        self.emit(&format!("je {}", no_sep_lbl));
+        self.emit(&format!("je {}", no_sep_label));
         self.emit("xor  %rax, %rax");
         self.emit("leaq Larr_sep(%rip), %rsi");
         self.emit("leaq printf_str(%rip), %rdi");
         self.emit("call printf");
 
-        self.emit(&format!("{}:", no_sep_lbl));
+        self.emit(&format!("{}:", no_sep_label));
 
         self.emit("movq 8(%r12,%r14,8), %rax");
 
@@ -314,9 +314,9 @@ impl Codegen {
         }
 
         self.emit("incq %r14");
-        self.emit(&format!("jmp {}", loop_lbl));
+        self.emit(&format!("jmp {}", loop_label));
 
-        self.emit(&format!("{}:", end_lbl));
+        self.emit(&format!("{}:", end_label));
         self.emit("xor  %rax, %rax");
         self.emit("leaq Larr_close(%rip), %rsi");
         self.emit("leaq printf_str(%rip), %rdi");
@@ -487,6 +487,38 @@ impl Codegen {
                     offsets.insert(field_name.clone(), idx);
                 }
                 self.structs.insert(name.clone(), offsets);
+            }
+            Stmt::For {
+                init,
+                cond,
+                post,
+                body,
+            } => {
+                let label_body = self.new_label("for_body");
+                let label_cond = self.new_label("for_cond");
+                let label_end = self.new_label("for_end");
+
+                if let Some(init_stmt) = init {
+                    self.gen_stmt(init_stmt);
+                }
+
+                self.emit(&format!("jmp {label_cond}"));
+
+                self.emit(&format!("{label_body}:"));
+                for stmt in body {
+                    self.gen_stmt(stmt);
+                }
+
+                if let Some(post_expr) = post {
+                    self.gen_expr(post_expr);
+                }
+
+                self.emit(&format!("{label_cond}:"));
+                self.gen_expr(cond);
+                self.emit("test %rax, %rax");
+                self.emit(&format!("jne {label_body}"));
+
+                self.emit(&format!("{label_end}:"));
             }
         }
     }
@@ -738,8 +770,8 @@ impl Codegen {
                     value: Value::Str(s),
                 } => {
                     if !cg.string_literals.contains_key(s) {
-                        let lbl = cg.new_label("str");
-                        cg.string_literals.insert(s.clone(), lbl);
+                        let label = cg.new_label("str");
+                        cg.string_literals.insert(s.clone(), label);
                     }
                 }
                 Expr::Const { .. } => {}
@@ -805,6 +837,22 @@ impl Codegen {
                             self.string_literals.insert(field.to_string(), label);
                         }
                     }
+                }
+                Stmt::For {
+                    init,
+                    cond,
+                    post,
+                    body,
+                } => {
+                    if let Some(init) = init {
+                        self.collect_string_literals(&[*init.to_owned()]);
+                    }
+                    walk_expr(self, cond);
+                    if let Some(post) = post {
+                        walk_expr(self, post);
+                    }
+
+                    self.collect_string_literals(body);
                 }
             }
         }

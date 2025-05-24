@@ -58,11 +58,56 @@ impl Parser {
             Token::Return => self.parse_return(),
             Token::If => self.parse_if(),
             Token::Struct => self.parse_struct_decl(),
+            Token::For => self.parse_for(),
             _ => {
                 let expr = self.parse_expr();
                 self.expect(&Token::Semi);
                 Stmt::Expr { expr }
             }
+        }
+    }
+
+    fn parse_for(&mut self) -> Stmt {
+        self.expect(&Token::For);
+        self.expect(&Token::LParen);
+
+        let init = if self.peek() == &Token::Semi {
+            self.next();
+            None
+        } else {
+            let stmt = self.parse_stmt();
+            Some(Box::new(stmt))
+        };
+
+        let cond = if self.peek() == &Token::Semi {
+            self.next();
+            Expr::Const {
+                value: Value::Int(1),
+            }
+        } else {
+            let expr = self.parse_expr();
+            self.expect(&Token::Semi);
+            expr
+        };
+
+        let post = if self.peek() == &Token::RParen {
+            None
+        } else {
+            Some(Box::new(self.parse_expr()))
+        };
+        self.expect(&Token::RParen);
+
+        self.expect(&Token::LBrace);
+        let mut body = Vec::new();
+        while !self.consume(&Token::RBrace) {
+            body.push(self.parse_stmt());
+        }
+
+        Stmt::For {
+            init,
+            cond,
+            post,
+            body,
         }
     }
 

@@ -111,6 +111,27 @@ impl Interpreter {
                 self.eval(expr);
                 None
             }
+            Stmt::For {
+                init,
+                cond,
+                post,
+                body,
+            } => {
+                if let Some(init_stmt) = init {
+                    self.exec(init_stmt);
+                }
+
+                while self.eval(cond).is_truthy() {
+                    for stmt in body {
+                        self.exec(stmt);
+                    }
+                    if let Some(post_expr) = post {
+                        self.eval(post_expr);
+                    }
+                }
+
+                None
+            }
         }
     }
 

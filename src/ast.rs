@@ -21,6 +21,15 @@ impl Value {
             _ => panic!("Expected integer, got {:?}", self),
         }
     }
+
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            Value::Null => false,
+            Value::Int(n) => *n != 0,
+            Value::Str(s) => !s.is_empty(),
+            Value::Array(..) | Value::Struct(..) => true,
+        }
+    }
 }
 
 impl From<i64> for Value {
@@ -167,7 +176,7 @@ impl Display for Expr {
                     write!(f, "{name}: {expr}")?;
                     if i + 1 < fields.len() {
                         write!(f, ",")?;
-                        write!(f, "\n")?;
+                        writeln!(f)?;
                     }
                 }
                 write!(f, "}}")
@@ -206,5 +215,11 @@ pub enum Stmt {
     },
     Expr {
         expr: Expr,
+    },
+    For {
+        init: Option<Box<Stmt>>,
+        cond: Expr,
+        post: Option<Box<Expr>>,
+        body: Vec<Stmt>,
     },
 }
