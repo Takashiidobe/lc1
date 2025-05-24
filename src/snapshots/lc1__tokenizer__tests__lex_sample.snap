@@ -1,0 +1,37 @@
+---
+source: src/tokenizer.rs
+expression: tokens
+---
+- Fn
+- Ident: greet
+- LParen
+- Ident: name
+- Colon
+- Ident: str
+- Comma
+- Ident: age
+- Colon
+- Ident: int
+- RParen
+- Arrow
+- Ident: str
+- LBrace
+- Let
+- Ident: msg
+- Assign
+- Str: "Hello, "
+- Plus
+- Ident: name
+- Semi
+- Print
+- LParen
+- Ident: msg
+- RParen
+- Semi
+- RBrace
+- Ident: greet
+- LParen
+- Str: world
+- RParen
+- Semi
+- Eof
