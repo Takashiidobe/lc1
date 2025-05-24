@@ -1,4 +1,4 @@
-use std::{cmp::max, collections::HashMap};
+use std::collections::HashMap;
 
 use crate::ast::{Expr, Stmt, Value};
 
@@ -157,27 +157,35 @@ impl Codegen {
 
     fn stack_offset(&mut self, stmts: &[Stmt]) {
         fn count_vars(stmts: &[Stmt]) -> u64 {
-            stmts
-                .iter()
-                .filter(|x| matches!(x, Stmt::VarDecl { .. }))
-                .count() as u64
-        }
-
-        let mut var_count = 0;
-        let mut global_count = 0;
-
-        for stmt in stmts {
-            match stmt {
-                Stmt::FnDecl { body, args, .. } => {
-                    let function_vars = count_vars(body) + args.len() as u64;
-                    var_count = max(var_count, function_vars);
+            let mut count = 0;
+            for stmt in stmts {
+                match stmt {
+                    Stmt::VarDecl { .. } => {
+                        count += 1;
+                    }
+                    Stmt::If {
+                        then, else_branch, ..
+                    } => {
+                        count += count_vars(then);
+                        if let Some(els) = else_branch {
+                            count += count_vars(els);
+                        }
+                    }
+                    Stmt::For { init, body, .. } => {
+                        // If the init is a VarDecl, count it
+                        if let Some(Stmt::VarDecl { .. }) = init.as_deref() {
+                            count += 1;
+                        }
+                        count += count_vars(body);
+                    }
+                    _ => {}
                 }
-                Stmt::VarDecl { .. } => global_count += 1,
-                _ => {}
             }
+            count
         }
 
-        self.max_offset = max(var_count, global_count);
+        let total_vars = count_vars(stmts);
+        self.max_offset = total_vars;
     }
 
     pub fn run(&mut self, stmts: &[Stmt]) -> String {
@@ -709,6 +717,12 @@ impl Codegen {
                     let offset = 8 * idx;
 
                     self.emit(&format!("movq %rax, {}(%r12)", offset));
+                } else if let Expr::Var { name } = &**target {
+                    self.gen_expr(value);
+
+                    let offset = self.var_offsets.get(name).unwrap();
+
+                    self.emit(&format!("movq %rax, {}(%rbp)", offset));
                 } else {
                     panic!("Assignment target must be a struct field");
                 }
